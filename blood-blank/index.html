@@ -1749,5 +1749,103 @@ $("confirm-ok").addEventListener("click", async ()=>{
   });
 })();
 </script>
+<script>
+/* ==== 献血量受约束下拉（公开版新增）============================
+   全血：100 / 200 / 300 / 400 ml；血小板：1 / 2 治疗量（上限 2）。
+   选择结果写回页面原有的 #f-amount，并触发 input 事件，使「折算次数」实时更新。 */
+(function () {
+  var WHOLE = [100, 200, 300, 400];
+  var PLT = [1, 2];
+
+  function ready(fn) {
+    if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', fn); }
+    else { fn(); }
+  }
+
+  ready(function () {
+    var input = document.getElementById('f-amount');
+    var mask = document.getElementById('add-mask');
+    var seg = document.getElementById('type-seg');
+    if (!input || !mask || document.getElementById('ls-amount-select')) { return; }
+
+    var sel = document.createElement('select');
+    sel.id = 'ls-amount-select';
+    sel.className = input.className || 'f-input';
+    sel.style.cssText = 'margin-top:0';
+
+    function curType() {
+      var a = seg ? seg.querySelector('.seg-btn.active') : null;
+      return (a && a.dataset.t) || '全血';
+    }
+    function options() { return curType() === '全血' ? WHOLE : PLT; }
+    function unitText() { return curType() === '全血' ? ' ml' : ' 治疗量'; }
+
+    function build(keepValue) {
+      var list = options();
+      var html = '<option value="">请选择献血量</option>';
+      list.forEach(function (v) { html += '<option value="' + v + '">' + v + unitText() + '</option>'; });
+      /* 旧记录里若是不在允许范围内的值（例如 150 ml、3 治疗量），保留原值可选项，不擅自改动历史数据 */
+      if (keepValue && list.indexOf(Number(keepValue)) < 0) {
+        html += '<option value="' + keepValue + '">其他（原值 ' + keepValue + unitText() + '）</option>';
+      }
+      sel.innerHTML = html;
+      if (keepValue && (list.indexOf(Number(keepValue)) >= 0 || true)) {
+        var hit = Array.prototype.some.call(sel.options, function (o) { return o.value === String(keepValue); });
+        sel.value = hit ? String(keepValue) : '';
+      } else {
+        sel.value = '';
+      }
+      /* 同时给原输入框加上边界，双保险 */
+      if (curType() === '全血') { input.min = '100'; input.max = '400'; input.step = '100'; input.placeholder = '100/200/300/400'; }
+      else { input.min = '1'; input.max = '2'; input.step = '1'; input.placeholder = '1 或 2 治疗量'; }
+    }
+    function apply() {
+      input.value = sel.value || '';
+      input.style.display = 'none';
+      try { input.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
+      try { input.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
+      /* 不依赖页面内部函数：按页面口径自行计算并写入「折算次数」提示 */
+      var hint = document.getElementById('f-conv');
+      if (hint) {
+        var v = parseFloat(sel.value);
+        if (isFinite(v) && v > 0) {
+          var times = curType() === '全血' ? Math.round(v / 200 * 100) / 100 : v;
+          hint.textContent = '折算次数：' + times + ' 次';
+        } else {
+          hint.textContent = curType() === '全血'
+            ? '折算规则：全血200ml=1次（可选 100 / 200 / 300 / 400）'
+            : '折算规则：血小板1治疗量=1次（最多 2 治疗量）';
+        }
+      }
+      try { if (typeof updateConv === 'function') { updateConv(); } } catch (e) {}
+      /* updateConv 若把空值提示写回，这里再兜一次 */
+      if (hint && sel.value) {
+        var v2 = parseFloat(sel.value);
+        var t2 = curType() === '全血' ? Math.round(v2 / 200 * 100) / 100 : v2;
+        if (hint.textContent.indexOf(String(t2)) < 0) { hint.textContent = '折算次数：' + t2 + ' 次'; }
+      }
+    }
+
+    sel.addEventListener('change', apply);
+
+    /* 类型切换后重建选项：全血 ↔ 血小板 的取值口径不同 */
+    if (seg) {
+      seg.addEventListener('click', function () { setTimeout(function () { build(''); apply(); }, 0); });
+    }
+    /* 每次打开弹层：新增清空，编辑则按已存数值回填 */
+    new MutationObserver(function () {
+      if (!mask.hidden) {
+        var v = (input.value || '').trim();
+        build(v);
+        if (v) { apply(); }
+      }
+    }).observe(mask, { attributes: true, attributeFilter: ['hidden'] });
+
+    input.insertAdjacentElement('afterend', sel);
+    input.style.display = 'none';
+    build((input.value || '').trim());
+  });
+})();
+</script>
 </body>
 </html>
