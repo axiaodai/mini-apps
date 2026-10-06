@@ -902,8 +902,20 @@ main{
   function save(db) { try { localStorage.setItem(dataKey(), JSON.stringify(db)); } catch (e) {} }
   function db() { var d = load(); if (!d) { d = { records: [] }; save(d); } if (!Array.isArray(d.records)) { d.records = []; } return d; }
   function reply(obj, status) {
-    return Promise.resolve(new Response(JSON.stringify(obj),
-      { status: status || 200, headers: { "Content-Type": "application/json" } }));
+    var bodyText = JSON.stringify(obj), code = status || 200;
+    if (typeof Response === "function") {
+      try {
+        return Promise.resolve(new Response(bodyText,
+          { status: code, headers: { "Content-Type": "application/json" } }));
+      } catch (e) { /* 落到下面的兼容实现 */ }
+    }
+    /* 兼容老内核（部分安卓 WebView / 微信内置浏览器没有 Response） */
+    return Promise.resolve({
+      ok: code >= 200 && code < 300, status: code, statusText: "",
+      headers: { get: function () { return "application/json"; } },
+      json: function () { return Promise.resolve(JSON.parse(bodyText)); },
+      text: function () { return Promise.resolve(bodyText); }
+    });
   }
   function isoWeek(d) {
     var t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
@@ -1209,8 +1221,9 @@ function renderOverview(){
   const years = yearlyVar.map(y=> y.year.slice(2)+"年");
   const mlData = yearlyVar.map(y=> Math.round(y.totalMl));
   const cntData = yearlyVar.map(y=> y.count);
-  const maxIdx = mlData.indexOf(Math.max(...mlData));
-  $("year-note").textContent = yearlyVar[maxIdx].year+"年献血量最高（"+mlData[maxIdx].toLocaleString("zh-CN")+" ml，"+cntData[maxIdx]+" 次），占累计 "+(mlData[maxIdx]/totalMl*100).toFixed(0)+"%";
+  const maxIdx = mlData.length ? mlData.indexOf(Math.max(...mlData)) : -1;
+  if (maxIdx < 0) { $("year-note").textContent = "暂无记录：点右下角「＋」添加第一条"; }
+  else { $("year-note").textContent = yearlyVar[maxIdx].year+"年献血量最高（"+mlData[maxIdx].toLocaleString("zh-CN")+" ml，"+cntData[maxIdx]+" 次），占累计 "+(mlData[maxIdx]/totalMl*100).toFixed(0)+"%"; }
 
   yearChart.setOption({
     color:["#B3261E"],
