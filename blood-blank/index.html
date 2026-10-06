@@ -1,0 +1,1365 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#B3261E">
+<title>献血记录 · 管理统计</title>
+<meta name="description" content="献血记录管理与统计">
+<link rel="stylesheet" href="https://miaoda.feishu.cn/fonts/css2?family=Barlow+Condensed:wght@500;600;700&family=Noto+Sans+SC:wght@400;500;700;900&display=swap">
+<style>
+:root{
+  --red:#B3261E;
+  --red-deep:#8E1B15;
+  --gold:#C9962E;
+  --bg:#F8F3EE;
+  --card:#FFFFFF;
+  --ink:#33231F;
+  --ink2:#6B5750;
+  --ink3:#98837B;
+  --line:#EDE4DB;
+  --blue:#4C7FD4;
+  --ok:#1E7A55;
+  --font-display:"Barlow Condensed","Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
+  --font-body:"Noto Sans SC","PingFang SC","Microsoft YaHei",-apple-system,sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{
+  font-family:var(--font-body);
+  background:var(--bg);
+  color:var(--ink);
+  -webkit-font-smoothing:antialiased;
+  font-size:14px;
+}
+#app{
+  max-width:480px;
+  margin:0 auto;
+  height:100%;
+  display:flex;
+  flex-direction:column;
+  position:relative;
+}
+/* ===== 顶栏 ===== */
+.topbar{
+  background:var(--red);
+  color:#fff;
+  padding:calc(env(safe-area-inset-top,0px) + 10px) 16px 12px;
+  flex-shrink:0;
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+}
+.topbar h1{
+  font-size:19px;
+  font-weight:700;
+  letter-spacing:.5px;
+}
+.topbar .tag{
+  font-family:var(--font-display);
+  font-size:13px;
+  font-weight:600;
+  letter-spacing:2px;
+  color:rgba(255,255,255,.88);
+  background:rgba(255,255,255,.16);
+  border-radius:20px;
+  padding:3px 10px;
+}
+/* ===== 内容区 ===== */
+main{
+  flex:1;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  padding:0 14px calc(84px + env(safe-area-inset-bottom,0px));
+}
+.view{display:none}
+.view.active{display:block}
+.view-title{
+  font-size:16px;
+  font-weight:700;
+  margin:16px 2px 4px;
+}
+.view-sub{
+  font-size:12px;
+  color:var(--ink3);
+  margin:0 2px 12px;
+}
+.section{margin-top:16px}
+.section-head{
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  margin:0 2px 10px;
+}
+.section-head h2{
+  font-size:15px;
+  font-weight:700;
+}
+.section-head .hint{
+  font-size:11px;
+  color:var(--ink3);
+}
+.card{
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:14px;
+}
+/* ===== KPI ===== */
+.kpi-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+  margin-top:14px;
+}
+.kpi{
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:12px 14px;
+}
+.kpi .num{
+  font-family:var(--font-display);
+  font-size:30px;
+  font-weight:700;
+  line-height:1;
+  font-variant-numeric:tabular-nums;
+}
+.kpi .num small{font-size:14px;font-weight:600;color:var(--ink2);margin-left:2px}
+.kpi .lbl{font-size:12px;color:var(--ink2);margin-top:5px}
+.kpi.hl .num{color:var(--gold)}
+/* ===== 图表 ===== */
+.chart-box{width:100%;height:210px}
+.chart-title{font-size:13px;font-weight:700;margin-bottom:2px}
+.chart-note{font-size:11px;color:var(--ink3);margin:8px 2px 0;line-height:1.6}
+/* ===== 构成快览 ===== */
+.share-preview{
+  display:flex;
+  align-items:center;
+  gap:14px;
+}
+.share-preview .donut-box{width:110px;height:110px;flex-shrink:0}
+.share-preview .s-list{flex:1;min-width:0}
+.s-row{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:6px 0;
+  border-bottom:1px dashed var(--line);
+  font-size:13px;
+}
+.s-row:last-child{border-bottom:none}
+.s-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.s-row .v{flex:1;color:var(--ink2)}
+.s-row .n{font-family:var(--font-display);font-size:17px;font-weight:700;font-variant-numeric:tabular-nums}
+/* ===== 首末献血 ===== */
+.edge-pair{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+.edge-card{border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--card)}
+.edge-card .t{font-size:11px;color:var(--ink3)}
+.edge-card .p{font-family:var(--font-display);font-size:24px;font-weight:700;margin:3px 0 2px}
+.edge-card .d{font-size:11px;color:var(--ink2);line-height:1.5}
+.edge-card.first .p{color:var(--red)}
+.edge-card.last .p{color:var(--gold)}
+/* ===== 查询 ===== */
+.search-box{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:10px 12px;
+  margin-top:14px;
+}
+.search-box svg{width:18px;height:18px;color:var(--ink3);flex-shrink:0}
+.search-box input{
+  flex:1;
+  border:none;
+  outline:none;
+  background:none;
+  font-size:14px;
+  font-family:var(--font-body);
+  color:var(--ink);
+}
+.search-box input::placeholder{color:var(--ink3)}
+.search-clear{
+  border:none;background:none;
+  color:var(--ink3);
+  font-size:16px;
+  cursor:pointer;
+  padding:2px 4px;
+  line-height:1;
+}
+/* ===== 筛选 chips ===== */
+.chips{
+  display:flex;
+  gap:8px;
+  margin:12px 0 4px;
+  overflow-x:auto;
+  padding-bottom:4px;
+}
+.chip{
+  flex-shrink:0;
+  border:1px solid var(--line);
+  background:var(--card);
+  color:var(--ink2);
+  border-radius:20px;
+  padding:8px 14px;
+  font-size:13px;
+  font-family:var(--font-body);
+  cursor:pointer;
+  min-height:38px;
+}
+.chip.active{
+  background:var(--red);
+  border-color:var(--red);
+  color:#fff;
+  font-weight:700;
+}
+/* ===== 记录列表 ===== */
+.rec-list{list-style:none}
+.rec{
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:11px 12px;
+  margin-bottom:9px;
+  display:flex;
+  gap:11px;
+  align-items:flex-start;
+}
+.rec .drop{
+  width:34px;height:34px;
+  border-radius:50%;
+  flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(150deg,#E9D9CE,#D8C2B4);
+  box-shadow:inset 0 -2px 0 rgba(0,0,0,.12), inset 0 2px 0 rgba(255,255,255,.35);
+}
+.rec .drop svg{width:17px;height:17px}
+.rec-main{flex:1;min-width:0}
+.rec-date{
+  font-size:14px;
+  font-weight:700;
+  line-height:1.35;
+}
+.rec-meta{
+  font-size:11px;
+  color:var(--ink3);
+  margin-top:3px;
+  font-variant-numeric:tabular-nums;
+}
+.rec-side{text-align:right;flex-shrink:0}
+.rec-amt{
+  font-family:var(--font-display);
+  font-size:19px;
+  font-weight:700;
+  color:var(--red-deep);
+  font-variant-numeric:tabular-nums;
+}
+.rec-times{font-size:11px;color:var(--ink2);margin-top:2px;font-variant-numeric:tabular-nums}
+.rec-del{
+  flex-shrink:0;
+  width:32px;height:32px;
+  border:none;background:none;
+  color:var(--ink3);
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;
+  border-radius:8px;
+}
+.rec-del:active{background:#F3E9E0;color:var(--red)}
+.rec-del svg{width:18px;height:18px}
+.badge{
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  font-size:10px;
+  font-weight:700;
+  border-radius:4px;
+  padding:2px 6px;
+  margin-top:5px;
+  margin-right:4px;
+}
+.badge.w{background:#F7EBC8;color:#8A6413}
+.badge.p{background:#F7E0DE;color:var(--red)}
+.badge.n{background:#E3ECFB;color:#2F5FB0}
+/* ===== 荣誉 hero ===== */
+.honor-hero{
+  background:linear-gradient(150deg,#8E1B15,#B3261E 55%,#C4453C);
+  border-radius:16px;
+  color:#fff;
+  padding:18px 16px;
+  margin-top:14px;
+  position:relative;
+  overflow:hidden;
+}
+.honor-hero .big{
+  font-family:var(--font-display);
+  font-size:44px;
+  font-weight:700;
+  line-height:1;
+  font-variant-numeric:tabular-nums;
+}
+.honor-hero .big small{font-size:16px;font-weight:600;color:rgba(255,255,255,.85);margin-left:4px}
+.honor-hero .sub{font-size:12px;color:rgba(255,255,255,.85);margin-top:4px}
+.honor-hero .counts{
+  display:flex;
+  gap:8px;
+  margin-top:12px;
+  flex-wrap:wrap;
+}
+.hh-chip{
+  background:rgba(255,255,255,.16);
+  border-radius:8px;
+  padding:6px 10px;
+  font-size:12px;
+}
+.hh-chip b{font-family:var(--font-display);font-size:16px;margin-right:3px}
+.convert-card{
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:10px 12px;
+  margin-top:12px;
+}
+.convert-head{
+  font-size:12px;
+  font-weight:700;
+  color:var(--ink2);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  margin-bottom:2px;
+}
+.convert-head .rule{font-size:10px;font-weight:500;color:var(--ink3)}
+.convert-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  font-size:12px;
+  padding:6px 0;
+  border-bottom:1px dashed var(--line);
+}
+.convert-row:last-child{border-bottom:none}
+.convert-row .l{color:var(--ink2);font-weight:600}
+.convert-row .r{font-family:var(--font-display);font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
+.convert-row .r small{font-size:10px;color:var(--ink3);font-weight:600;margin-left:2px}
+.convert-row.total .l,.convert-row.total .r{color:var(--red);font-weight:700}
+.honor-group-title{
+  font-size:13px;
+  font-weight:700;
+  color:var(--ink2);
+  margin:18px 2px 8px;
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+.honor-group-title .cnt{
+  font-family:var(--font-display);
+  font-size:12px;
+  font-weight:600;
+  color:var(--ink3);
+}
+.round2{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+}
+.r2-item{
+  flex:1;
+  min-width:102px;
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:9px 10px 10px;
+  text-align:center;
+}
+.r2-item .nm{
+  font-size:11px;
+  color:var(--ink3);
+  font-weight:600;
+}
+.r2-item .num{
+  font-family:var(--font-display);
+  font-size:22px;
+  font-weight:700;
+  line-height:1.25;
+  margin:3px 0 1px;
+  font-variant-numeric:tabular-nums;
+  color:var(--ink);
+}
+.r2-item .num small{
+  font-size:11px;
+  font-weight:600;
+  color:var(--ink3);
+}
+.r2-item.done{
+  background:#E0F0E8;
+  border-color:transparent;
+}
+.r2-item.done .num{color:var(--ok)}
+.award-list{list-style:none}
+.award{
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:10px 12px;
+  margin-bottom:8px;
+  display:flex;
+  gap:11px;
+  align-items:center;
+}
+.award .medal{
+  width:42px;height:42px;border-radius:50%;
+  flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(150deg,#DFAF4A,#A87C1C);
+  color:#fff;
+  box-shadow:inset 0 -2px 0 rgba(0,0,0,.15), inset 0 2px 0 rgba(255,255,255,.25);
+}
+.award .medal.silver{background:linear-gradient(150deg,#C7CCD4,#8A93A3)}
+.award .medal.gold{background:linear-gradient(150deg,#F0C468,#B8912A)}
+.award .medal.life{background:linear-gradient(150deg,#7A8BBF,#4A5D96)}
+.award .medal svg{width:20px;height:20px}
+.award .info{flex:1;min-width:0}
+.award .nm{font-size:13px;font-weight:700;line-height:1.4}
+.award .meta{font-size:11px;color:var(--ink3);margin-top:2px;font-variant-numeric:tabular-nums}
+.award .st{flex-shrink:0;margin-top:0}
+.badge.y{background:#E0F0E8;color:var(--ok)}
+.badge.r{background:#F9E3E1;color:var(--red)}
+/* ===== 进度条 ===== */
+.progress-track{
+  flex:1;
+  height:10px;
+  background:#EFE7DF;
+  border-radius:5px;
+  overflow:hidden;
+  min-width:60px;
+  margin-top:6px;
+}
+.progress-bar{
+  height:100%;
+  background:linear-gradient(90deg,#C4453C,#B3261E);
+  border-radius:5px;
+}
+.progress-bar.max{background:linear-gradient(90deg,#F0C468,#C9962E)}
+/* ===== 年度明细 ===== */
+.yr-list{list-style:none}
+.yr{
+  display:flex;
+  align-items:center;
+  gap:9px;
+  padding:7px 0;
+  border-bottom:1px solid var(--line);
+}
+.yr:last-child{border-bottom:none}
+.yr .y{
+  width:52px;flex-shrink:0;
+  font-size:12px;
+  font-weight:700;
+  color:var(--ink2);
+}
+.yr .bar-track{
+  flex:1;
+  height:14px;
+  background:#EFE7DF;
+  border-radius:7px;
+  overflow:hidden;
+}
+.yr .bar{
+  height:100%;
+  background:var(--red);
+  border-radius:7px;
+  min-width:2px;
+}
+.yr .bar.max{background:var(--gold)}
+.yr .v{
+  width:60px;flex-shrink:0;
+  text-align:right;
+  font-family:var(--font-display);
+  font-size:14px;
+  font-weight:700;
+  font-variant-numeric:tabular-nums;
+}
+/* ===== 明细表 ===== */
+.detail-table{width:100%;border-collapse:collapse;font-size:12px}
+.detail-table th{
+  text-align:left;
+  font-weight:700;
+  color:var(--ink2);
+  padding:6px 4px;
+  border-bottom:1px solid var(--line);
+  white-space:nowrap;
+}
+.detail-table td{
+  padding:7px 4px;
+  border-bottom:1px solid #F5EEE7;
+  font-variant-numeric:tabular-nums;
+}
+.detail-table tr:last-child td{border-bottom:none}
+.detail-table td.num{text-align:right;font-family:var(--font-display);font-weight:600}
+/* ===== 底部导航 ===== */
+.tabbar{
+  position:fixed;
+  left:0;right:0;bottom:0;
+  margin:0 auto;
+  max-width:480px;
+  background:rgba(255,255,255,.97);
+  border-top:1px solid var(--line);
+  display:flex;
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  z-index:50;
+}
+.tab{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:2px;
+  padding:8px 0 6px;
+  min-height:56px;
+  color:var(--ink3);
+  background:none;
+  border:none;
+  font-family:var(--font-body);
+  font-size:11px;
+  cursor:pointer;
+}
+.tab svg{width:22px;height:22px}
+.tab.active{color:var(--red);font-weight:700}
+.tabbar-fix{height:calc(56px + env(safe-area-inset-bottom,0px))}
+.note{
+  font-size:11px;
+  color:var(--ink3);
+  text-align:center;
+  margin:18px 0 6px;
+  line-height:1.6;
+}
+/* ===== 添加按钮 ===== */
+.fab{
+  position:fixed;
+  right:16px;
+  bottom:calc(76px + env(safe-area-inset-bottom,0px));
+  width:52px;height:52px;
+  border-radius:50%;
+  background:var(--red);
+  color:#fff;
+  border:none;
+  font-size:30px;
+  font-weight:300;
+  line-height:1;
+  box-shadow:0 4px 14px rgba(179,38,30,.4);
+  z-index:60;
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
+}
+.fab:active{transform:scale(.94)}
+/* ===== 添加弹窗 ===== */
+.modal-mask{
+  position:fixed;inset:0;
+  background:rgba(30,15,12,.5);
+  z-index:100;
+  display:flex;align-items:flex-end;justify-content:center;
+}
+.modal-mask[hidden]{display:none}
+.modal{
+  background:#fff;
+  width:100%;
+  max-width:480px;
+  border-radius:18px 18px 0 0;
+  padding:18px 18px calc(18px + env(safe-area-inset-bottom,0px));
+  max-height:88vh;
+  overflow-y:auto;
+}
+.modal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.modal-title{font-size:17px;font-weight:700}
+.modal-x{background:none;border:none;font-size:24px;color:var(--ink3);cursor:pointer;padding:0 4px}
+.f-label{display:block;font-size:12px;font-weight:700;color:var(--ink2);margin:12px 0 6px}
+.f-input{
+  width:100%;
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:11px 12px;
+  font-size:15px;
+  font-family:var(--font-body);
+  background:#fff;
+  color:var(--ink);
+  outline:none;
+}
+.f-input:focus{border-color:var(--red)}
+.f-grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.f-unit{display:flex;align-items:center;gap:6px}
+.f-unit .unit-lbl{color:var(--ink3);font-size:13px;font-weight:600;white-space:nowrap}
+.seg{display:flex;gap:6px}
+.seg-btn{
+  flex:1;
+  border:1px solid var(--line);
+  background:#fff;
+  color:var(--ink2);
+  border-radius:10px;
+  padding:10px 0;
+  font-size:13px;
+  font-family:var(--font-body);
+  cursor:pointer;
+}
+.seg-btn.active{background:var(--red);border-color:var(--red);color:#fff;font-weight:700}
+.conv-hint{
+  font-size:12px;
+  color:var(--red-deep);
+  font-weight:600;
+  margin-top:6px;
+}
+.modal-foot{display:flex;gap:10px;margin-top:18px}
+.btn-ghost,.btn-primary{
+  flex:1;
+  border-radius:12px;
+  padding:13px 0;
+  font-size:15px;
+  font-family:var(--font-body);
+  cursor:pointer;
+}
+.btn-ghost{background:#F3EDE6;border:1px solid var(--line);color:var(--ink2)}
+.btn-primary{background:var(--red);border:none;color:#fff;font-weight:700}
+.btn-primary:disabled{opacity:.5}
+/* ===== 删除确认弹窗 ===== */
+.confirm-mask{
+  position:fixed;inset:0;
+  background:rgba(30,15,12,.5);
+  z-index:110;
+  display:flex;align-items:center;justify-content:center;
+}
+.confirm-mask[hidden]{display:none}
+.confirm-box{
+  background:#fff;
+  width:calc(100% - 64px);
+  max-width:340px;
+  border-radius:16px;
+  padding:20px 18px 16px;
+  text-align:center;
+}
+.confirm-box .ct{font-size:16px;font-weight:700;margin-bottom:8px}
+.confirm-box .cd{font-size:12px;color:var(--ink2);line-height:1.6;margin-bottom:16px}
+.confirm-foot{display:flex;gap:10px}
+/* ===== Toast ===== */
+.toast{
+  position:fixed;
+  left:50%;bottom:110px;
+  transform:translateX(-50%);
+  background:rgba(45,25,20,.92);
+  color:#fff;
+  font-size:13px;
+  padding:10px 18px;
+  border-radius:22px;
+  z-index:120;
+  max-width:80%;
+  text-align:center;
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <h1 id="page-title">总览</h1>
+    <span class="tag">BLOOD DONATION</span>
+  </header>
+
+  <main>
+    <!-- ===== 总览 ===== -->
+    <section class="view active" id="view-overview">
+      <div class="view-title">无偿献血 · 记录管理</div>
+      <div class="view-sub">统计周期 2022年3月27日 至今 · 数据来自献血记录管理表</div>
+
+      <div class="kpi-grid">
+        <div class="kpi">
+          <div class="num" id="kpi-ml">9,500<small>ml</small></div>
+          <div class="lbl">累计献血总量</div>
+        </div>
+        <div class="kpi">
+          <div class="num" id="kpi-count">24<small>次</small></div>
+          <div class="lbl">献血次数</div>
+        </div>
+        <div class="kpi">
+          <div class="num" id="kpi-times">47.5<small>次</small></div>
+          <div class="lbl">折算总次数</div>
+        </div>
+        <div class="kpi hl">
+          <div class="num" id="kpi-points">42<small>分</small></div>
+          <div class="lbl">累计积分</div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-head">
+          <h2>年度献血趋势</h2>
+          <span class="hint">单位：折算 ml（血小板1治疗量=200ml）</span>
+        </div>
+        <div class="card">
+          <div class="chart-title">每年献血量（折算）与次数</div>
+          <div class="chart-box" id="year-chart"></div>
+          <div class="chart-note" id="year-note"></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-head">
+          <h2>献血构成</h2>
+          <span class="hint" id="share-hint">全血 ml 与血小板折算 ml</span>
+        </div>
+        <div class="card share-preview" id="share-preview">
+          <div class="donut-box" id="share-donut"></div>
+          <div class="s-list" id="share-summary"></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-head">
+          <h2>首末记录</h2>
+          <span class="hint">按献血日期</span>
+        </div>
+        <div class="edge-pair">
+          <div class="edge-card first">
+            <div class="t">首次献血</div>
+            <div class="p" id="first-date"></div>
+            <div class="d" id="first-detail"></div>
+          </div>
+          <div class="edge-card last">
+            <div class="t">最近献血</div>
+            <div class="p" id="last-date"></div>
+            <div class="d" id="last-detail"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 记录 ===== -->
+    <section class="view" id="view-records">
+      <div class="view-title">献血记录</div>
+      <div class="view-sub" id="rec-sub"></div>
+      <div class="search-box">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input type="search" id="search-input" placeholder="查询：日期 / 地点 / 备注 / 类型" autocomplete="off">
+        <button class="search-clear" id="search-clear" hidden aria-label="清除">×</button>
+      </div>
+      <div class="chips" id="rec-chips"></div>
+      <ul class="rec-list" id="rec-list"></ul>
+    </section>
+
+    <!-- ===== 荣誉 ===== -->
+    <section class="view" id="view-honor">
+      <div class="view-title">无偿献血荣誉</div>
+      <div class="view-sub">全国无偿献血奉献奖进度 · 按折算次数累计</div>
+      <div class="honor-hero">
+        <div class="big" id="hh-total">47.5<small>次</small></div>
+        <div class="sub" id="hh-sub"></div>
+        <div class="counts" id="hh-counts"></div>
+      </div>
+      <div class="convert-card">
+        <div class="convert-head">折算明细 <span class="rule">全血200ml=1次 · 血小板1治疗量=1次</span></div>
+        <div class="convert-row"><span class="l" id="cv-whole-l"></span><span class="r" id="cv-whole-r"></span></div>
+        <div class="convert-row"><span class="l" id="cv-plt-l"></span><span class="r" id="cv-plt-r"></span></div>
+        <div class="convert-row total"><span class="l">合计折算</span><span class="r" id="cv-total-r"></span></div>
+      </div>
+      <div class="honor-group-title">距离第二轮金银铜奖 <span class="cnt">金银铜可循环 · 终身仅一次</span></div>
+      <div class="round2" id="round2-box"></div>
+      <div class="honor-group-title" id="hg-award-title"></div>
+      <ul class="award-list" id="award-list"></ul>
+    </section>
+
+    <!-- ===== 统计 ===== -->
+    <section class="view" id="view-stats">
+      <div class="view-title">年度统计</div>
+      <div class="view-sub">每年献血明细 · 积分与总量</div>
+
+      <div class="section">
+        <div class="section-head">
+          <h2>年度献血明细</h2>
+          <span class="hint">单位：ml / 治疗量 / 次</span>
+        </div>
+        <div class="card">
+          <table class="detail-table" id="yr-table"></table>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-head">
+          <h2>历年折算量</h2>
+          <span class="hint">折算 ml · 最高标金</span>
+        </div>
+        <div class="card">
+          <ul class="yr-list" id="yr-list"></ul>
+        </div>
+      </div>
+
+      <div class="note">折算规则：全血200ml=1次 · 血小板1治疗量=1次 · 血小板1治疗量=200ml<br>数据来源：本地录入（示例版·空数据）</div>
+    </section>
+  </main>
+
+  <button class="fab" id="fab-add" aria-label="添加记录">＋</button>
+
+  <nav class="tabbar" id="tabbar">
+    <button class="tab active" data-tab="overview" aria-label="总览">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-7 4 14 2-7h6"/></svg>
+      <span>总览</span>
+    </button>
+    <button class="tab" data-tab="records" aria-label="记录">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+      <span>记录</span>
+    </button>
+    <button class="tab" data-tab="honor" aria-label="荣誉">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="14" r="6"/><path d="M9 8.5 7.5 3l4.5 2L16.5 3 15 8.5"/></svg>
+      <span>荣誉</span>
+    </button>
+    <button class="tab" data-tab="stats" aria-label="统计">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+      <span>统计</span>
+    </button>
+  </nav>
+</div>
+
+<!-- ===== 添加记录弹窗 ===== -->
+<div class="modal-mask" id="add-mask" hidden>
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title">添加献血记录</div>
+      <button class="modal-x" id="add-close" aria-label="关闭">×</button>
+    </div>
+    <div class="modal-body">
+      <label class="f-label">献血类型</label>
+      <div class="seg" id="type-seg">
+        <button type="button" class="seg-btn active" data-t="全血">全血</button>
+        <button type="button" class="seg-btn" data-t="血小板">血小板</button>
+      </div>
+      <label class="f-label">献血日期</label>
+      <input class="f-input" type="date" id="f-date">
+      <div class="f-grid2">
+        <div>
+          <label class="f-label">献血量</label>
+          <div class="f-unit">
+            <input class="f-input" type="number" id="f-amount" step="1" min="0" placeholder="如 400">
+            <span class="unit-lbl" id="f-unit-lbl">ml</span>
+          </div>
+          <div class="conv-hint" id="f-conv">折算次数：1.5 次</div>
+        </div>
+        <div>
+          <label class="f-label">积分</label>
+          <input class="f-input" type="number" id="f-points" step="1" min="0" placeholder="如 4">
+        </div>
+      </div>
+      <label class="f-label">献血地点</label>
+      <input class="f-input" id="f-place" list="place-list" placeholder="选择或输入地点" maxlength="60">
+      <datalist id="place-list"></datalist>
+      <label class="f-label">备注（可选）</label>
+      <input class="f-input" id="f-note" placeholder="如：临沂" maxlength="60">
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn-ghost" id="add-cancel">取消</button>
+      <button type="button" class="btn-primary" id="add-submit">保存记录</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 删除确认弹窗 ===== -->
+<div class="confirm-mask" id="confirm-mask" hidden>
+  <div class="confirm-box">
+    <div class="ct">删除这条记录？</div>
+    <div class="cd" id="confirm-desc"></div>
+    <div class="confirm-foot">
+      <button type="button" class="btn-ghost" id="confirm-cancel">取消</button>
+      <button type="button" class="btn-primary" id="confirm-ok">删除</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="../vendor/echarts.min.js" integrity="sha384-pPi0zxBAoDu6+JXW/C68UZLvBUUtU+7zonhif43rqj7pxsGyqyqzcian2Rj37Rss" crossorigin="anonymous"></script>
+<script>
+const DATA = {"records":[]};
+
+/* ===== 工具函数 ===== */
+const $ = id => document.getElementById(id);
+const fmtDate = d => { const [y,m,dd] = d.split("-"); return parseInt(m)+"月"+parseInt(dd)+"日"; };
+const fmtNum = v => Number.isInteger(v) ? v : v.toFixed(1);
+const fmtAmount = r => r[1] === "全血" ? r[2] + " ml" : r[2] + " 治疗量";
+const CAT_NAMES = { all:"全部", whole:"全血", plt:"血小板" };
+const catOf = r => r[1] === "全血" ? "whole" : "plt";
+
+/* 汇总计算（全部由源数据计算，可随数据更新重算） */
+let totalMl=0, wholeMl=0, pltUnits=0, pltMl=0, totalTimes=0, wholeTimes=0, pltTimes=0, totalPoints=0;
+let totalCount=0, catCount={all:0,whole:0,plt:0};
+let first=null, last=null;
+let yearlyVar=[], AWARDS=[];
+const AWARD_CFG = [
+  { key:"cu", name:"无偿献血铜奖", target:20, cycle:true },
+  { key:"yin", name:"无偿献血银奖", target:30, cycle:true },
+  { key:"jin", name:"无偿献血金奖", target:40, cycle:true },
+  { key:"life", name:"终身荣誉奖", target:120, cycle:false }
+];
+/* 循环周期基准：一个完整周期 = 金奖门槛 40 次，第二轮从第 40 次后重新累计 */
+const CYCLE = 40;
+function computeAll(){
+  wholeMl = DATA.records.filter(r=>r[1]==="全血").reduce((s,r)=>s+r[2],0);
+  pltUnits = DATA.records.filter(r=>r[1]==="血小板").reduce((s,r)=>s+r[2],0);
+  pltMl = pltUnits * 200;
+  totalMl = wholeMl + pltMl;
+  wholeTimes = Math.round(wholeMl / 200 * 100) / 100;
+  pltTimes = Math.round(pltUnits * 100) / 100;
+  totalTimes = Math.round(DATA.records.reduce((s,r)=>s+r[3],0) * 100) / 100;
+  totalPoints = DATA.records.reduce((s,r)=>s+(r[5]||0),0);
+  totalCount = DATA.records.length;
+  catCount = { all:totalCount, whole:0, plt:0 };
+  DATA.records.forEach(r=>{ catCount[catOf(r)]++; });
+
+  const sorted = DATA.records.slice().sort((a,b)=>(a[0]||"").localeCompare(b[0]||""));
+  first = sorted[0] || null;
+  last = sorted[sorted.length-1] || null;
+
+  /* 年度汇总 */
+  const byYear = new Map();
+  sorted.forEach(r=>{
+    if (!r[0]) return;
+    const yk = r[0].slice(0,4);
+    const yr = byYear.get(yk) || { year:yk, wholeMl:0, pltUnits:0, pltMl:0, times:0, count:0, points:0 };
+    if (r[1]==="全血") yr.wholeMl += r[2]; else { yr.pltUnits += r[2]; yr.pltMl += r[2]*200; }
+    yr.times += r[3];
+    yr.count++;
+    yr.points += r[5]||0;
+    byYear.set(yk, yr);
+  });
+  yearlyVar = [...byYear.values()].sort((a,b)=>a.year.localeCompare(b.year));
+  yearlyVar.forEach(yr=>{ yr.totalMl = yr.wholeMl + yr.pltMl; });
+
+  AWARDS = AWARD_CFG.map(a=>{
+    if (a.cycle){
+      /* 金银铜奖循环：一个完整周期 CYCLE 次（金奖门槛），
+         第1轮门槛=target，第N轮门槛=CYCLE*(N-1)+target */
+      const t = totalTimes;
+      if (t < a.target){
+        return { ...a, cycle:true, rounds:0, next:a.target,
+          remain: a.target - t, inPct: t / a.target * 100, done:false };
+      }
+      const rounds = Math.floor((t - a.target) / CYCLE) + 1;
+      const next = CYCLE * rounds + a.target;
+      const prev = CYCLE * (rounds - 1) + a.target;
+      return { ...a, cycle:true, rounds, next,
+        remain: Math.max(0, next - t),
+        inPct: Math.min(100, (t - prev) / CYCLE * 100),
+        done: true };
+    }
+    /* 终身荣誉奖仅可获 1 次 */
+    const done = totalTimes >= a.target;
+    return { ...a, cycle:false, rounds: done?1:0, next:a.target,
+      remain: Math.max(0, a.target - totalTimes),
+      inPct: Math.min(100, totalTimes / a.target * 100),
+      done };
+  });
+}
+
+/* ===== 渲染：总览 ===== */
+function renderOverview(){
+  $("kpi-ml").innerHTML = totalMl.toLocaleString("zh-CN",{maximumFractionDigits:0})+"<small>ml</small>";
+  $("kpi-count").innerHTML = totalCount+"<small>次</small>";
+  $("kpi-times").innerHTML = (Number.isInteger(totalTimes)?totalTimes:totalTimes.toFixed(1))+"<small>次</small>";
+  $("kpi-points").innerHTML = totalPoints+"<small>分</small>";
+
+  // 年度趋势图
+  const years = yearlyVar.map(y=> y.year.slice(2)+"年");
+  const mlData = yearlyVar.map(y=> Math.round(y.totalMl));
+  const cntData = yearlyVar.map(y=> y.count);
+  const maxIdx = mlData.indexOf(Math.max(...mlData));
+  $("year-note").textContent = yearlyVar[maxIdx].year+"年献血量最高（"+mlData[maxIdx].toLocaleString("zh-CN")+" ml，"+cntData[maxIdx]+" 次），占累计 "+(mlData[maxIdx]/totalMl*100).toFixed(0)+"%";
+
+  yearChart.setOption({
+    color:["#B3261E"],
+    grid:{left:46,right:12,top:18,bottom:26},
+    tooltip:{trigger:"axis",confine:true,backgroundColor:"#33231F",borderWidth:0,textStyle:{color:"#fff",fontSize:12},
+      formatter:p=>{
+        const i=p[0].dataIndex;
+        return years[i]+"　"+mlData[i].toLocaleString("zh-CN")+" ml · "+cntData[i]+" 次<br>全血 "+yearlyVar[i].wholeMl+" ml / 血小板 "+yearlyVar[i].pltUnits+" 治疗量";
+      }},
+    xAxis:{type:"category",data:years,axisLine:{lineStyle:{color:"#EDE4DB"}},axisTick:{show:false},
+      axisLabel:{color:"#6B5750",fontSize:11,fontFamily:"Noto Sans SC"}},
+    yAxis:{type:"value",name:"ml",nameTextStyle:{color:"#98837B",fontSize:10},
+      axisLabel:{color:"#98837B",fontSize:10,fontFamily:"Barlow Condensed"},
+      splitLine:{lineStyle:{color:"#F3ECE5"}}},
+    series:[{
+      type:"bar",data:mlData,barWidth:"46%",
+      itemStyle:{borderRadius:[5,5,0,0]},
+      label:{show:true,position:"top",color:"#B3261E",fontSize:10,fontFamily:"Barlow Condensed",
+        formatter:p=>p.value.toLocaleString("zh-CN")}
+    }]
+  });
+
+  // 构成环形图
+  shareChart.setOption({
+    color:["#B3261E","#C9962E"],
+    title:{text:String(totalMl.toLocaleString("zh-CN"))+" ml",left:"center",top:"30%",textStyle:{color:"#33231F",fontSize:15,fontWeight:700,fontFamily:"Barlow Condensed"}},
+    tooltip:{trigger:"item",confine:true,backgroundColor:"#33231F",borderWidth:0,textStyle:{color:"#fff",fontSize:12},
+      formatter:p=>p.name+"　"+p.value.toLocaleString("zh-CN")+" ml（"+(p.value/totalMl*100).toFixed(0)+"%）"},
+    legend:{show:true,bottom:0,left:"center",icon:"circle",itemWidth:8,itemHeight:8,
+      textStyle:{color:"#6B5750",fontSize:11}},
+    series:[{
+      type:"pie",radius:["52%","74%"],center:["50%","42%"],
+      label:{show:false},
+      emphasis:{scale:false},
+      data:[
+        {name:"全血",value:Math.round(wholeMl)},
+        {name:"血小板（折算）",value:Math.round(pltMl)}
+      ]
+    }]
+  });
+
+  const ssum = $("share-summary");
+  ssum.innerHTML =
+    '<div class="s-row"><span class="s-dot" style="background:#B3261E"></span><span class="v">全血</span><span class="n">'+wholeMl+' ml</span></div>'+
+    '<div class="s-row"><span class="s-dot" style="background:#C9962E"></span><span class="v">血小板（折算）</span><span class="n">'+pltMl.toLocaleString("zh-CN")+' ml</span></div>'+
+    '<div class="s-row"><span class="s-dot" style="background:#98837B"></span><span class="v">血小板（实际）</span><span class="n">'+pltUnits+' 治疗量</span></div>';
+
+  // 首末记录
+  if (first){
+    $("first-date").textContent = fmtDate(first[0]);
+    $("first-detail").textContent = first[1]+" · "+fmtAmount(first)+" · "+first[4];
+  }
+  if (last){
+    $("last-date").textContent = fmtDate(last[0]);
+    $("last-detail").textContent = last[1]+" · "+fmtAmount(last)+" · "+last[4];
+  }
+}
+
+/* ===== 渲染：记录 ===== */
+let curCat = "all";
+let searchQuery = "";
+const fmtSearch = d => { const [y,m,dd] = d.split("-"); return y+"年"+parseInt(m)+"月"+parseInt(dd)+"日"; };
+function matchQuery(r){
+  if (!searchQuery) return true;
+  const q = searchQuery.toLowerCase();
+  const hay = [r[0], r[1], String(r[2]), String(r[3]), r[4], r[6]||"", fmtDate(r[0]), fmtSearch(r[0]), r[0]].join(" ").toLowerCase();
+  return hay.indexOf(q) !== -1;
+}
+function renderChips(){
+  $("rec-chips").innerHTML = Object.keys(CAT_NAMES).map(k=>
+    '<button class="chip'+(k===curCat?" active":"")+'" data-cat="'+k+'">'+CAT_NAMES[k]+'<span style="opacity:.7;margin-left:3px">'+catCount[k]+'</span></button>'
+  ).join("");
+  $("rec-chips").querySelectorAll(".chip").forEach(c=>{
+    c.addEventListener("click",()=>{ curCat=c.dataset.cat; renderChips(); renderRecList(); });
+  });
+}
+function typeBadge(r){
+  return r[1] === "全血"
+    ? '<span class="badge w">全血</span>'
+    : '<span class="badge p">血小板</span>';
+}
+function renderRecList(){
+  const filtered = DATA.records.map((r,i)=>[r,i]).filter(([r])=> (curCat==="all" || catOf(r)===curCat) && matchQuery(r)).reverse();
+  $("rec-sub").textContent = "共 "+filtered.length+" 条记录"+(searchQuery?"（查询 “"+searchQuery+"”）":"")+" · 按日期倒序";
+  if (!filtered.length){
+    $("rec-list").innerHTML = '<li style="text-align:center;color:var(--ink3);padding:30px 0;font-size:13px">'+(searchQuery?"未找到匹配记录":"该分类暂无记录")+'</li>';
+    return;
+  }
+  $("rec-list").innerHTML = filtered.map(([r,idx])=>{
+    const note = r[6] ? '<span class="badge n">'+r[6]+'</span>' : '';
+    const pts = r[5] ? '<span class="badge y">'+r[5]+' 分</span>' : '';
+    return '<li class="rec">'+
+      '<span class="drop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5c3 4.5 6.5 7.8 6.5 11.5a6.5 6.5 0 0 1-13 0c0-3.7 3.5-7 6.5-11.5z"/></svg></span>'+
+      '<div class="rec-main"><div class="rec-date">'+fmtDate(r[0])+'</div>'+
+      '<div class="rec-meta">'+r[4]+' · 折算 '+r[3]+' 次</div>'+
+      typeBadge(r)+pts+note+'</div>'+
+      '<div class="rec-side"><div class="rec-amt">'+r[2]+'<small style="font-size:11px;font-weight:500;color:var(--ink2)">'+(r[1]==="全血"?" ml":" 治疗量")+'</small></div><div class="rec-times">'+(r[1]==="全血"?"全血":"血小板")+'</div></div>'+
+      '<button class="rec-del" data-idx="'+idx+'" aria-label="删除">'+
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13M10 11v6M14 11v6"/></svg></button></li>';
+  }).join("");
+  $("rec-list").querySelectorAll(".rec-del").forEach(b=>{
+    b.addEventListener("click",()=>{
+      const idx = Number(b.dataset.idx);
+      const r = DATA.records[idx];
+      if (r) openConfirm(idx, r);
+    });
+  });
+}
+
+/* ===== 渲染：荣誉 ===== */
+function renderRound2(){
+  /* 距离第二轮金银铜奖：第二轮从第40次后重新累计
+     第2轮铜=CYCLE+20=60、银=CYCLE+30=70、金=CYCLE+40=80 */
+  const r2 = [
+    { nm:"第二轮铜奖", target:CYCLE + 20 },
+    { nm:"第二轮银奖", target:CYCLE + 30 },
+    { nm:"第二轮金奖", target:CYCLE + 40 }
+  ];
+  $("round2-box").innerHTML = r2.map(o=>{
+    const remain = o.target - totalTimes;
+    const done = remain <= 0;
+    return '<div class="r2-item'+(done?" done":"")+'">'+
+      '<div class="nm">'+o.nm+'</div>'+
+      (done
+        ? '<div class="num" style="font-size:15px;line-height:2">已达成</div><div class="nm">目标 '+o.target+' 次</div>'
+        : '<div class="num">'+fmtNum(remain)+'<small>次</small></div><div class="nm">还差 · 目标 '+o.target+' 次</div>')+
+      '</div>';
+  }).join("");
+}
+function renderHonor(){
+  renderRound2();
+  $("hh-sub").textContent = "累计 "+totalMl.toLocaleString("zh-CN")+" ml · "+totalCount+" 次献血 · 折算 "+totalTimes+" 次";
+  $("hh-counts").innerHTML =
+    '<span class="hh-chip"><b>'+wholeMl+'</b>全血ml</span>'+
+    '<span class="hh-chip"><b>'+pltUnits+'</b>血小板治疗量</span>'+
+    '<span class="hh-chip"><b>'+totalTimes+'</b>折算次数</span>';
+  /* 折算明细：全血ml / 血小板治疗量 → 次数 */
+  $("cv-whole-l").textContent = "全血 "+wholeMl+" ml";
+  $("cv-whole-r").innerHTML = fmtNum(wholeTimes)+'<small>次</small>';
+  $("cv-plt-l").textContent = "血小板 "+pltUnits+" 治疗量";
+  $("cv-plt-r").innerHTML = fmtNum(pltTimes)+'<small>次</small>';
+  $("cv-total-r").innerHTML = fmtNum(totalTimes)+'<small>次</small>';
+  const doneCnt = AWARDS.filter(a=>a.done).length;
+  $("hg-award-title").innerHTML = '奉献奖进度 <span class="cnt">已达成 '+doneCnt+' / '+AWARDS.length+'</span>';
+
+  const medalIcons = {
+    cu:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13.5" r="4.5"/><path d="M9.5 10 8 3.5l4 1.8 4-1.8-1.5 6.5"/></svg>',
+    yin:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13.5" r="4.5"/><path d="M9.5 10 8 3.5l4 1.8 4-1.8-1.5 6.5"/></svg>',
+    jin:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13.5" r="4.5"/><path d="M9.5 10 8 3.5l4 1.8 4-1.8-1.5 6.5"/></svg>',
+    life:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13.5" r="4.5"/><path d="M8.5 10.5 8 3.5l4 1.8 4-1.8-.5 7"/><path d="M12 15.5v2"/></svg>'
+  };
+  $("award-list").innerHTML = AWARDS.map(a=>{
+    let st, meta;
+    if (a.cycle){
+      st = a.rounds>0
+        ? '<span class="badge y st">已获 '+a.rounds+' 轮 · 距下轮还差 '+fmtNum(a.remain)+' 次</span>'
+        : '<span class="badge r st">还差 '+fmtNum(a.remain)+' 次</span>';
+      meta = '第1轮 '+a.target+' 次 · 之后每 '+CYCLE+' 次获一轮 · 当前 '+fmtNum(totalTimes)+' 次 · 第'+a.rounds+'轮已完成';
+    } else {
+      st = a.done
+        ? '<span class="badge y st">已达成 · 终身仅此一次</span>'
+        : '<span class="badge r st">还差 '+fmtNum(a.remain)+' 次</span>';
+      meta = '终身仅一次 · 目标 '+a.target+' 次 · 当前 '+fmtNum(totalTimes)+' 次';
+    }
+    return '<li class="award"><span class="medal '+(a.key==="cu"?"":a.key)+'">'+medalIcons[a.key]+'</span>'+
+      '<div class="info"><div class="nm">'+a.name+'</div><div class="meta">'+meta+'</div>'+
+      '<div class="progress-track"><div class="progress-bar'+(a.done?" max":"")+'" style="width:'+a.inPct.toFixed(1)+'%"></div></div></div>'+st+'</li>';
+  }).join("");
+}
+
+/* ===== 渲染：统计 ===== */
+function renderStats(){
+  const rows = yearlyVar.map(yr=>
+    '<tr><td>'+yr.year+'</td><td class="num">'+Math.round(yr.wholeMl)+'</td><td class="num">'+yr.pltUnits+'</td><td class="num">'+yr.pltMl.toLocaleString("zh-CN")+'</td><td class="num">'+Math.round(yr.totalMl).toLocaleString("zh-CN")+'</td><td class="num">'+yr.count+'</td><td class="num">'+yr.points+'</td></tr>'
+  ).join("");
+  $("yr-table").innerHTML =
+    '<thead><tr><th>年份</th><th>全血ml</th><th>血小板<br>治疗量</th><th>血小板<br>折算ml</th><th>合计ml</th><th>次数</th><th>积分</th></tr></thead><tbody>'+
+    rows+
+    '<tr style="font-weight:700"><td>累计</td><td class="num">'+Math.round(wholeMl)+'</td><td class="num">'+pltUnits+'</td><td class="num">'+pltMl.toLocaleString("zh-CN")+'</td><td class="num">'+totalMl.toLocaleString("zh-CN")+'</td><td class="num">'+totalCount+'</td><td class="num">'+totalPoints+'</td></tr></tbody>';
+
+  const maxMl = Math.max(...yearlyVar.map(y=>y.totalMl));
+  $("yr-list").innerHTML = yearlyVar.map(yr=>
+    '<li class="yr"><span class="y">'+yr.year+'年</span>'+
+    '<div class="bar-track"><div class="bar'+(yr.totalMl===maxMl?" max":"")+'" style="width:'+(yr.totalMl/maxMl*100).toFixed(1)+'%"></div></div>'+
+    '<span class="v">'+Math.round(yr.totalMl).toLocaleString("zh-CN")+'</span></li>'
+  ).join("");
+}
+
+/* ===== 图表 ===== */
+const yearChart = echarts.init($("year-chart"));
+const shareChart = echarts.init($("share-donut"));
+new ResizeObserver(()=>yearChart.resize()).observe($("year-chart"));
+new ResizeObserver(()=>shareChart.resize()).observe($("share-donut"));
+
+/* ===== 路由 ===== */
+const TITLES = { overview:"总览", records:"记录", honor:"荣誉", stats:"统计" };
+function showTab(name){
+  document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
+  $("view-"+name).classList.add("active");
+  document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("active", t.dataset.tab===name));
+  $("page-title").textContent = TITLES[name];
+  if (name==="overview"){ yearChart.resize(); shareChart.resize(); }
+  if (name==="records") renderRecList();
+}
+document.querySelectorAll(".tab").forEach(t=>{
+  t.addEventListener("click",()=>{ location.hash = t.dataset.tab; });
+});
+function route(){
+  const h = location.hash.replace("#","");
+  showTab(TITLES[h] ? h : "overview");
+}
+window.addEventListener("hashchange", route);
+
+/* ===== 初始化 ===== */
+computeAll();
+renderOverview();
+renderChips();
+renderRecList();
+renderHonor();
+renderStats();
+route();
+
+/* ===== 数据加载（后端API，失败时用内嵌数据兜底） ===== */
+async function initData(){
+  try {
+    const r = await fetch("/api/data", { cache: "no-store" });
+    if (!r.ok) throw new Error("api " + r.status);
+    const d = await r.json();
+    if (Array.isArray(d.records)){
+      DATA.records = d.records;
+      computeAll();
+      renderOverview();
+      renderChips();
+      renderRecList();
+      renderHonor();
+      renderStats();
+    }
+  } catch(e){
+    /* 离线或后端未就绪：保留内嵌数据 */
+  }
+}
+initData();
+
+/* ===== Toast ===== */
+function showToast(msg){
+  const t = $("toast");
+  t.textContent = msg;
+  t.hidden = false;
+  clearTimeout(showToast._tm);
+  showToast._tm = setTimeout(()=>{ t.hidden = true; }, 2400);
+}
+
+/* ===== 查询 ===== */
+$("search-input").addEventListener("input", ()=>{
+  searchQuery = $("search-input").value.trim();
+  $("search-clear").hidden = !searchQuery;
+  renderRecList();
+});
+$("search-clear").addEventListener("click", ()=>{
+  $("search-input").value = "";
+  searchQuery = "";
+  $("search-clear").hidden = true;
+  renderRecList();
+  $("search-input").focus();
+});
+
+/* ===== 添加记录 ===== */
+const ADD = { type:"全血" };
+function calcConv(type, amount){
+  const v = parseFloat(amount);
+  if (!isFinite(v) || v <= 0) return 0;
+  return type === "全血" ? Math.round(v / 200 * 100) / 100 : v;
+}
+
+function openAdd(){
+  ADD.type = "全血";
+  $("type-seg").querySelectorAll(".seg-btn").forEach((x,i)=>x.classList.toggle("active", i===0));
+  $("f-date").value = new Date().toISOString().slice(0,10);
+  $("f-amount").value = "";
+  $("f-points").value = "";
+  $("f-place").value = "";
+  $("f-note").value = "";
+  $("f-unit-lbl").textContent = "ml";
+  updateConv();
+  refreshPlaceList();
+  $("add-mask").hidden = false;
+}
+function refreshPlaceList(){
+  const places = [...new Set(DATA.records.map(r=>r[4]).filter(Boolean))].sort();
+  $("place-list").innerHTML = places.map(p=>'<option value="'+p.replace(/"/g,"&quot;")+'"></option>').join("");
+}
+function closeAdd(){ $("add-mask").hidden = true; }
+function updateConv(){
+  const v = calcConv(ADD.type, $("f-amount").value);
+  $("f-conv").textContent = v > 0 ? "折算次数："+v+" 次" : "折算规则：全血200ml=1次 · 血小板1治疗量=1次";
+}
+
+bindSeg("type-seg", b=>{
+  ADD.type = b.dataset.t;
+  $("f-unit-lbl").textContent = ADD.type === "全血" ? "ml" : "治疗量";
+  updateConv();
+});
+function bindSeg(segId, handler){
+  const box = $(segId);
+  box.querySelectorAll(".seg-btn").forEach(b=>{
+    b.addEventListener("click", ()=>{
+      box.querySelectorAll(".seg-btn").forEach(x=>x.classList.remove("active"));
+      b.classList.add("active");
+      handler(b);
+    });
+  });
+}
+$("f-amount").addEventListener("input", updateConv);
+
+$("fab-add").addEventListener("click", openAdd);
+$("add-close").addEventListener("click", closeAdd);
+$("add-cancel").addEventListener("click", closeAdd);
+$("add-mask").addEventListener("click", e=>{ if (e.target === $("add-mask")) closeAdd(); });
+
+async function submitAdd(){
+  const btn = $("add-submit");
+  const date = $("f-date").value;
+  const amount = parseFloat($("f-amount").value);
+  const place = $("f-place").value.trim();
+  const points = parseInt($("f-points").value,10) || 0;
+  const note = $("f-note").value.trim();
+  if (!date){ showToast("请选择献血日期"); return; }
+  if (!isFinite(amount) || amount <= 0){ showToast("请填写献血量"); return; }
+  if (!place){ showToast("请填写献血地点"); return; }
+  const payload = { date, type: ADD.type, amount, place, points, note };
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/records", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const d = await r.json();
+    if (!r.ok || !d.ok) throw new Error(d.error || "保存失败");
+    DATA.records = d.records;
+    computeAll();
+    renderOverview();
+    renderChips();
+    renderRecList();
+    renderHonor();
+    renderStats();
+    closeAdd();
+    showToast("已保存："+ADD.type+" · "+amount+" "+(ADD.type==="全血"?"ml":"治疗量"));
+  } catch(e){
+    showToast(e.message || "保存失败，请重试");
+  } finally {
+    btn.disabled = false;
+  }
+}
+$("add-submit").addEventListener("click", submitAdd);
+
+/* ===== 删除记录 ===== */
+let delIndex = -1;
+function openConfirm(idx, r){
+  delIndex = idx;
+  $("confirm-desc").textContent = fmtDate(r[0])+" · "+r[1]+" · "+fmtAmount(r)+" · "+r[4]+"\n删除后无法恢复";
+  $("confirm-mask").hidden = false;
+}
+function closeConfirm(){ $("confirm-mask").hidden = true; }
+$("confirm-cancel").addEventListener("click", closeConfirm);
+$("confirm-mask").addEventListener("click", e=>{ if (e.target === $("confirm-mask")) closeConfirm(); });
+
+$("confirm-ok").addEventListener("click", async ()=>{
+  const idx = delIndex;
+  closeConfirm();
+  const btn = $("confirm-ok");
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/records?index="+idx, { method: "DELETE" });
+    const d = await r.json();
+    if (!r.ok || !d.ok) throw new Error(d.error || "删除失败");
+    DATA.records = d.records;
+    computeAll();
+    renderOverview();
+    renderChips();
+    renderRecList();
+    renderHonor();
+    renderStats();
+    showToast("已删除该条记录");
+  } catch(e){
+    showToast(e.message || "删除失败，请重试");
+  } finally {
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

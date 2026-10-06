@@ -1,0 +1,1172 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14694A">
+<title>2026 跑步记录 · 奖牌统计</title>
+<meta name="description" content="2026年数字行动跑步记录与奖牌统计">
+<link rel="stylesheet" href="https://miaoda.feishu.cn/fonts/css2?family=Barlow+Condensed:wght@500;600;700&family=Noto+Sans+SC:wght@400;500;700;900&display=swap">
+<style>
+:root{
+  --green:#14694A;
+  --green-deep:#0D4F38;
+  --gold:#C9962E;
+  --bg:#F6F3EC;
+  --card:#FFFFFF;
+  --ink:#24332C;
+  --ink2:#5C6B64;
+  --ink3:#8A948F;
+  --line:#E7E1D4;
+  --blue:#4C7FD4;
+  --red:#C4453C;
+  --ok:#1E7A55;
+  --font-display:"Barlow Condensed","Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
+  --font-body:"Noto Sans SC","PingFang SC","Microsoft YaHei",-apple-system,sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{
+  font-family:var(--font-body);
+  background:var(--bg);
+  color:var(--ink);
+  -webkit-font-smoothing:antialiased;
+  font-size:14px;
+}
+#app{
+  max-width:480px;
+  margin:0 auto;
+  height:100%;
+  display:flex;
+  flex-direction:column;
+  position:relative;
+}
+/* ===== 顶栏 ===== */
+.topbar{
+  background:var(--green);
+  color:#fff;
+  padding:calc(env(safe-area-inset-top,0px) + 10px) 16px 12px;
+  flex-shrink:0;
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+}
+.topbar h1{
+  font-size:19px;
+  font-weight:700;
+  letter-spacing:.5px;
+}
+.topbar .tag{
+  font-family:var(--font-display);
+  font-size:13px;
+  font-weight:600;
+  letter-spacing:2px;
+  color:rgba(255,255,255,.85);
+  background:rgba(255,255,255,.14);
+  border-radius:20px;
+  padding:3px 10px;
+}
+/* ===== 内容区 ===== */
+main{
+  flex:1;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  padding:0 14px calc(84px + env(safe-area-inset-bottom,0px));
+}
+.view{display:none}
+.view.active{display:block}
+.view-title{
+  font-size:16px;
+  font-weight:700;
+  margin:16px 2px 4px;
+}
+.view-sub{
+  font-size:12px;
+  color:var(--ink3);
+  margin:0 2px 12px;
+}
+.section{margin-top:16px}
+.section-head{
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  margin:0 2px 10px;
+}
+.section-head h2{
+  font-size:15px;
+  font-weight:700;
+}
+.section-head .hint{
+  font-size:11px;
+  color:var(--ink3);
+}
+.card{
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:14px;
+}
+/* ===== KPI ===== */
+.kpi-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+  margin-top:14px;
+}
+.kpi{
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:12px 14px;
+}
+.kpi .num{
+  font-family:var(--font-display);
+  font-size:30px;
+  font-weight:700;
+  line-height:1;
+  font-variant-numeric:tabular-nums;
+}
+.kpi .num small{font-size:14px;font-weight:600;color:var(--ink2);margin-left:2px}
+.kpi .lbl{font-size:12px;color:var(--ink2);margin-top:5px}
+.kpi.hl .num{color:var(--gold)}
+/* ===== 图表 ===== */
+.chart-box{width:100%;height:210px}
+.chart-title{font-size:13px;font-weight:700;margin-bottom:2px}
+.chart-note{font-size:11px;color:var(--ink3);margin:8px 2px 0;line-height:1.6}
+/* ===== 奖牌快览 ===== */
+.medal-preview{
+  display:flex;
+  align-items:center;
+  gap:14px;
+  cursor:pointer;
+}
+.medal-preview .donut-box{width:110px;height:110px;flex-shrink:0}
+.medal-preview .ms-list{flex:1;min-width:0}
+.ms-row{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:6px 0;
+  border-bottom:1px dashed var(--line);
+  font-size:13px;
+}
+.ms-row:last-child{border-bottom:none}
+.ms-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.ms-row .v{flex:1;color:var(--ink2)}
+.ms-row .n{font-family:var(--font-display);font-size:17px;font-weight:700;font-variant-numeric:tabular-nums}
+/* ===== 最快/最慢 ===== */
+.speed-pair{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+.speed-card{border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--card)}
+.speed-card .t{font-size:11px;color:var(--ink3)}
+.speed-card .p{font-family:var(--font-display);font-size:24px;font-weight:700;margin:3px 0 2px}
+.speed-card .d{font-size:11px;color:var(--ink2);line-height:1.5}
+.speed-card.fast .p{color:var(--green)}
+.speed-card.slow .p{color:var(--red)}
+/* ===== 筛选 chips ===== */
+.chips{
+  display:flex;
+  gap:8px;
+  margin:12px 0 4px;
+  overflow-x:auto;
+  padding-bottom:4px;
+}
+.chip{
+  flex-shrink:0;
+  border:1px solid var(--line);
+  background:var(--card);
+  color:var(--ink2);
+  border-radius:20px;
+  padding:8px 14px;
+  font-size:13px;
+  font-family:var(--font-body);
+  cursor:pointer;
+  min-height:38px;
+}
+.chip.active{
+  background:var(--green);
+  border-color:var(--green);
+  color:#fff;
+  font-weight:700;
+}
+/* ===== 记录列表 ===== */
+.rec-list{list-style:none}
+.rec{
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:11px 12px;
+  margin-bottom:9px;
+  display:flex;
+  gap:11px;
+  align-items:flex-start;
+}
+.rec .coin{width:40px;height:40px}
+.rec-main{flex:1;min-width:0}
+.rec-name{
+  font-size:14px;
+  font-weight:700;
+  line-height:1.35;
+  word-break:break-all;
+}
+.rec-meta{
+  font-size:11px;
+  color:var(--ink3);
+  margin-top:3px;
+  font-variant-numeric:tabular-nums;
+}
+.rec-side{text-align:right;flex-shrink:0}
+.rec-pace{
+  font-family:var(--font-display);
+  font-size:19px;
+  font-weight:700;
+  color:var(--green-deep);
+  font-variant-numeric:tabular-nums;
+}
+.rec-km{font-size:11px;color:var(--ink2);margin-top:2px;font-variant-numeric:tabular-nums}
+.badge{
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  font-size:10px;
+  font-weight:700;
+  border-radius:4px;
+  padding:2px 6px;
+  margin-top:5px;
+}
+.badge.p{background:#F7EBC8;color:#8A6413}
+.badge.v{background:#E3ECFB;color:#2F5FB0}
+.badge.y{background:#E0F0E8;color:var(--ok)}
+.badge.n{background:#F9E3E1;color:var(--red)}
+/* ===== 奖牌 ===== */
+.medal-hero{
+  background:linear-gradient(150deg,#0D4F38,#14694A 55%,#1E7A55);
+  border-radius:16px;
+  color:#fff;
+  padding:18px 16px;
+  margin-top:14px;
+  position:relative;
+  overflow:hidden;
+}
+.medal-hero .big{
+  font-family:var(--font-display);
+  font-size:44px;
+  font-weight:700;
+  line-height:1;
+  font-variant-numeric:tabular-nums;
+}
+.medal-hero .big small{font-size:16px;font-weight:600;color:rgba(255,255,255,.8);margin-left:4px}
+.medal-hero .sub{font-size:12px;color:rgba(255,255,255,.82);margin-top:4px}
+.medal-hero .counts{
+  display:flex;
+  gap:8px;
+  margin-top:12px;
+}
+.mh-chip{
+  background:rgba(255,255,255,.16);
+  border-radius:8px;
+  padding:6px 10px;
+  font-size:12px;
+}
+.mh-chip b{font-family:var(--font-display);font-size:16px;margin-right:3px}
+.medal-group-title{
+  font-size:13px;
+  font-weight:700;
+  color:var(--ink2);
+  margin:18px 2px 8px;
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+.medal-group-title .cnt{
+  font-family:var(--font-display);
+  font-size:12px;
+  font-weight:600;
+  color:var(--ink3);
+}
+.m-list{list-style:none}
+.m-item{
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:10px 12px;
+  margin-bottom:8px;
+  display:flex;
+  gap:11px;
+  align-items:center;
+}
+.m-item .info{flex:1;min-width:0}
+.m-item .nm{font-size:13px;font-weight:700;line-height:1.4;word-break:break-all}
+.m-item .meta{font-size:11px;color:var(--ink3);margin-top:2px;font-variant-numeric:tabular-nums}
+.m-item .st{flex-shrink:0;margin-top:0}
+/* ===== 奖牌硬币 ===== */
+.coin{
+  width:44px;height:44px;border-radius:50%;
+  flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  position:relative;
+  box-shadow:inset 0 -2px 0 rgba(0,0,0,.15), inset 0 2px 0 rgba(255,255,255,.25);
+}
+.coin::before{
+  content:"";
+  position:absolute;
+  top:-8px;left:50%;
+  width:18px;height:10px;
+  transform:translateX(-50%) rotate(-8deg);
+  border-radius:2px;
+}
+.coin.p{background:linear-gradient(150deg,#DFAF4A,#A87C1C);color:#fff}
+.coin.p::before{background:#C4453C;border:1px solid #A63A33;box-shadow:0 0 0 2px #F6F3EC}
+.coin.v{background:linear-gradient(150deg,#5C8FDD,#3565AE);color:#fff}
+.coin.v::before{background:#2C4E8F;border:1px solid #23407A;box-shadow:0 0 0 2px #F6F3EC}
+.coin svg{width:20px;height:20px}
+.coin.sm{width:40px;height:40px}
+.coin.sm::before{top:-7px;width:16px;height:9px}
+/* ===== 成绩页 ===== */
+.pb-list{list-style:none}
+.pb{
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:11px 13px;
+  margin-bottom:9px;
+  display:flex;
+  align-items:center;
+  gap:12px;
+}
+.pb .dist{
+  width:52px;flex-shrink:0;
+  font-family:var(--font-display);
+  font-size:15px;
+  font-weight:700;
+  color:var(--green-deep);
+}
+.pb .body{flex:1;min-width:0}
+.pb .nm{font-size:13px;font-weight:700;line-height:1.35;word-break:break-all}
+.pb .meta{font-size:11px;color:var(--ink3);margin-top:2px}
+.pb .time{
+  text-align:right;flex-shrink:0;
+  font-family:var(--font-display);
+  font-size:18px;
+  font-weight:700;
+  font-variant-numeric:tabular-nums;
+}
+.pb .time small{display:block;font-size:10px;font-weight:500;color:var(--ink3);font-family:var(--font-body)}
+.pb.empty{opacity:.75}
+.pb.empty .dist,.pb.empty .time{color:var(--ink3)}
+/* ===== 周跑量 ===== */
+.week-list{list-style:none}
+.week{
+  display:flex;
+  align-items:center;
+  gap:9px;
+  padding:7px 0;
+  border-bottom:1px solid var(--line);
+}
+.week:last-child{border-bottom:none}
+.week .w{
+  width:52px;flex-shrink:0;
+  font-size:12px;
+  font-weight:700;
+  color:var(--ink2);
+}
+.week .bar-track{
+  flex:1;
+  height:14px;
+  background:#EFEBE0;
+  border-radius:7px;
+  overflow:hidden;
+}
+.week .bar{
+  height:100%;
+  background:var(--green);
+  border-radius:7px;
+  min-width:2px;
+}
+.week .bar.max{background:var(--gold)}
+.week .v{
+  width:52px;flex-shrink:0;
+  text-align:right;
+  font-family:var(--font-display);
+  font-size:14px;
+  font-weight:700;
+  font-variant-numeric:tabular-nums;
+}
+/* ===== 底部导航 ===== */
+.tabbar{
+  position:fixed;
+  left:0;right:0;bottom:0;
+  margin:0 auto;
+  max-width:480px;
+  background:rgba(255,255,255,.97);
+  border-top:1px solid var(--line);
+  display:flex;
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  z-index:50;
+}
+.tab{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:2px;
+  padding:8px 0 6px;
+  min-height:56px;
+  color:var(--ink3);
+  background:none;
+  border:none;
+  font-family:var(--font-body);
+  font-size:11px;
+  cursor:pointer;
+}
+.tab svg{width:22px;height:22px}
+.tab.active{color:var(--green);font-weight:700}
+.tab.active .tbar{background:var(--green)}
+.tabbar-fix{height:calc(56px + env(safe-area-inset-bottom,0px))}
+.note{
+  font-size:11px;
+  color:var(--ink3);
+  text-align:center;
+  margin:18px 0 6px;
+  line-height:1.6;
+}
+/* ===== 添加按钮 ===== */
+.fab{
+  position:fixed;
+  right:16px;
+  bottom:calc(76px + env(safe-area-inset-bottom,0px));
+  width:52px;height:52px;
+  border-radius:50%;
+  background:var(--green);
+  color:#fff;
+  border:none;
+  font-size:30px;
+  font-weight:300;
+  line-height:1;
+  box-shadow:0 4px 14px rgba(20,105,74,.4);
+  z-index:60;
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
+}
+.fab:active{transform:scale(.94)}
+/* ===== 记录页搜索与操作 ===== */
+.rec-search-box{position:relative;margin:2px 0 10px}
+.rec-search{width:100%;box-sizing:border-box;padding:9px 12px 9px 34px;border:1px solid #E3DCCB;border-radius:12px;background:#FBF9F3;font-size:14px;color:var(--ink);outline:none;-webkit-appearance:none}
+.rec-search:focus{border-color:var(--green)}
+.rec-search-box svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:#9AA69F;pointer-events:none}
+.rec-ops{display:flex;gap:6px;margin-top:7px}
+.rec-op{border:1px solid #E3DCCB;background:#fff;color:var(--ink2);font-size:11px;line-height:1;padding:7px 12px;border-radius:8px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.rec-op.edit{color:var(--green);border-color:#BFDCCD}
+.rec-op.del{color:#C0553F;border-color:#E8CCC2}
+.rec-op:active{transform:scale(.95)}
+/* ===== 添加弹窗 ===== */
+.modal-mask{
+  position:fixed;inset:0;
+  background:rgba(15,25,20,.5);
+  z-index:100;
+  display:flex;align-items:flex-end;justify-content:center;
+}
+.modal-mask[hidden]{display:none}
+.modal{
+  background:#fff;
+  width:100%;
+  max-width:480px;
+  border-radius:18px 18px 0 0;
+  padding:18px 18px calc(18px + env(safe-area-inset-bottom,0px));
+  max-height:88vh;
+  overflow-y:auto;
+}
+.modal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.modal-title{font-size:17px;font-weight:700}
+.modal-x{background:none;border:none;font-size:24px;color:var(--ink3);cursor:pointer;padding:0 4px}
+.f-label{display:block;font-size:12px;font-weight:700;color:var(--ink2);margin:12px 0 6px}
+.f-input{
+  width:100%;
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:11px 12px;
+  font-size:15px;
+  font-family:var(--font-body);
+  background:#fff;
+  color:var(--ink);
+  outline:none;
+}
+.f-input:focus{border-color:var(--green)}
+.f-grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.f-time{display:flex;align-items:center;gap:6px}
+.f-time input{text-align:center;padding:11px 4px}
+.f-time span{color:var(--ink3);font-weight:700}
+.seg{display:flex;gap:6px}
+.seg-btn{
+  flex:1;
+  border:1px solid var(--line);
+  background:#fff;
+  color:var(--ink2);
+  border-radius:10px;
+  padding:10px 0;
+  font-size:13px;
+  font-family:var(--font-body);
+  cursor:pointer;
+}
+.seg-btn.active{background:var(--green);border-color:var(--green);color:#fff;font-weight:700}
+.modal-foot{display:flex;gap:10px;margin-top:18px}
+.btn-ghost,.btn-primary{
+  flex:1;
+  border-radius:12px;
+  padding:13px 0;
+  font-size:15px;
+  font-family:var(--font-body);
+  cursor:pointer;
+}
+.btn-ghost{background:#F0EDE3;border:1px solid var(--line);color:var(--ink2)}
+.btn-primary{background:var(--green);border:none;color:#fff;font-weight:700}
+.btn-primary:disabled{opacity:.5}
+/* ===== Toast ===== */
+.toast{
+  position:fixed;
+  left:50%;bottom:110px;
+  transform:translateX(-50%);
+  background:rgba(20,30,25,.92);
+  color:#fff;
+  font-size:13px;
+  padding:10px 18px;
+  border-radius:22px;
+  z-index:120;
+  max-width:80%;
+  text-align:center;
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <h1 id="page-title">总览</h1>
+    <span class="tag">2026 RUN</span>
+  </header>
+
+  <main>
+    <!-- ===== 总览 ===== -->
+    <section class="view active" id="view-overview">
+      <div class="view-title">2026 数字行动 · 跑步记录</div>
+      <div class="view-sub">统计周期 4月6日 ~ 9月15日 · 数据来自跑步记录表</div>
+
+      <div class="kpi-grid">
+        <div class="kpi">
+          <div class="num" id="kpi-km">339.59<small>km</small></div>
+          <div class="lbl">累计跑量</div>
+        </div>
+        <div class="kpi">
+          <div class="num" id="kpi-count">52<small>次</small></div>
+          <div class="lbl">跑步次数</div>
+        </div>
+        <div class="kpi">
+          <div class="num" id="kpi-hours">46.3<small>h</small></div>
+          <div class="lbl">累计用时</div>
+        </div>
+        <div class="kpi hl">
+          <div class="num" id="kpi-pace">8'11"<small>/km</small></div>
+          <div class="lbl">平均配速</div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-head">
+          <h2>月跑量趋势</h2>
+          <span class="hint">单位：公里</span>
+        </div>
+        <div class="card">
+          <div class="chart-title">每月跑量与次数</div>
+          <div class="chart-box" id="month-chart"></div>
+          <div class="chart-note" id="month-note"></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-head">
+          <h2>奖牌一览</h2>
+          <span class="hint" id="medal-hint">点击查看奖牌墙</span>
+        </div>
+        <div class="card medal-preview" id="medal-preview">
+          <div class="donut-box" id="medal-donut"></div>
+          <div class="ms-list" id="medal-summary"></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-head">
+          <h2>配速极限</h2>
+          <span class="hint">按平均配速</span>
+        </div>
+        <div class="speed-pair">
+          <div class="speed-card fast">
+            <div class="t">最快一次</div>
+            <div class="p" id="fast-pace"></div>
+            <div class="d" id="fast-detail"></div>
+          </div>
+          <div class="speed-card slow">
+            <div class="t">最慢一次</div>
+            <div class="p" id="slow-pace"></div>
+            <div class="d" id="slow-detail"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 记录 ===== -->
+    <section class="view" id="view-records">
+      <div class="view-title">跑步记录</div>
+      <div class="view-sub" id="rec-sub"></div>
+      <div class="rec-search-box">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input class="rec-search" id="rec-search" type="search" placeholder="搜索记录名称或日期…">
+      </div>
+      <div class="chips" id="rec-chips"></div>
+      <ul class="rec-list" id="rec-list"></ul>
+    </section>
+
+    <!-- ===== 奖牌 ===== -->
+    <section class="view" id="view-medals">
+      <div class="view-title">奖牌收藏</div>
+      <div class="view-sub">实体与虚拟奖牌合集</div>
+      <div class="medal-hero">
+        <div class="big" id="mh-total">19<small>枚</small></div>
+        <div class="sub" id="mh-sub"></div>
+        <div class="counts" id="mh-counts"></div>
+      </div>
+      <div class="medal-group-title" id="mg-physical-title"></div>
+      <ul class="m-list" id="m-physical"></ul>
+      <div class="medal-group-title" id="mg-virtual-title"></div>
+      <ul class="m-list" id="m-virtual"></ul>
+    </section>
+
+    <!-- ===== 成绩 ===== -->
+    <section class="view" id="view-stats">
+      <div class="view-title">成绩与排行</div>
+      <div class="view-sub">各距离最佳 · 全程配速对比</div>
+
+      <div class="section">
+        <div class="section-head">
+          <h2>各距离最佳成绩</h2>
+          <span class="hint">按单次用时</span>
+        </div>
+        <ul class="pb-list" id="pb-list"></ul>
+      </div>
+
+      <div class="section">
+        <div class="section-head">
+          <h2>周跑量</h2>
+          <span class="hint">有记录周 · 公里</span>
+        </div>
+        <div class="card">
+          <ul class="week-list" id="week-list"></ul>
+        </div>
+      </div>
+
+      <div class="note">数据来源：本地录入（示例版·空数据）</div>
+    </section>
+  </main>
+
+  <button class="fab" id="fab-add" aria-label="添加记录">＋</button>
+
+  <nav class="tabbar" id="tabbar">
+    <button class="tab active" data-tab="overview" aria-label="总览">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-7 4 14 2-7h6"/></svg>
+      <span>总览</span>
+    </button>
+    <button class="tab" data-tab="records" aria-label="记录">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+      <span>记录</span>
+    </button>
+    <button class="tab" data-tab="medals" aria-label="奖牌">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="14" r="6"/><path d="M9 8.5 7.5 3l4.5 2L16.5 3 15 8.5"/></svg>
+      <span>奖牌</span>
+    </button>
+    <button class="tab" data-tab="stats" aria-label="成绩">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 21h10M9 21v-6a3 3 0 0 1 6 0v6"/><path d="M8.5 10H6a4 4 0 0 1-4-4 2 2 0 0 1 2-2h5.5a2 2 0 0 1 2 2 4 4 0 0 1-3 4z"/><path d="M15.5 10H18a4 4 0 0 0 4-4 2 2 0 0 0-2-2h-5.5a2 2 0 0 0-2 2 4 4 0 0 0 3 4z"/></svg>
+      <span>成绩</span>
+    </button>
+  </nav>
+</div>
+
+<!-- ===== 添加记录弹窗 ===== -->
+<div class="modal-mask" id="add-mask" hidden>
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title" id="add-title">添加跑步记录</div>
+      <button class="modal-x" id="add-close" aria-label="关闭">×</button>
+    </div>
+    <div class="modal-body">
+      <label class="f-label">类型</label>
+      <div class="seg" id="type-seg">
+        <button type="button" class="seg-btn active" data-t="daily">日常跑</button>
+        <button type="button" class="seg-btn" data-t="trail">登山·越野</button>
+        <button type="button" class="seg-btn" data-t="event">赛事活动</button>
+      </div>
+      <div id="event-name-row" hidden>
+        <label class="f-label">活动名称</label>
+        <input class="f-input" id="f-name" placeholder="如：城市马拉松10公里" maxlength="60">
+      </div>
+      <label class="f-label">日期</label>
+      <input class="f-input" type="date" id="f-date">
+      <div class="f-grid2">
+        <div>
+          <label class="f-label">公里数</label>
+          <input class="f-input" type="number" id="f-km" step="0.01" min="0.01" placeholder="如 10.00">
+        </div>
+        <div>
+          <label class="f-label">用时</label>
+          <div class="f-time">
+            <input class="f-input" type="number" id="f-h" min="0" max="23" placeholder="时" value="0">
+            <span>:</span>
+            <input class="f-input" type="number" id="f-m" min="0" max="59" placeholder="分" value="0">
+            <span>:</span>
+            <input class="f-input" type="number" id="f-s" min="0" max="59" placeholder="秒" value="0">
+          </div>
+        </div>
+      </div>
+      <label class="f-label">奖牌</label>
+      <div class="seg" id="medal-seg">
+        <button type="button" class="seg-btn active" data-m="">无</button>
+        <button type="button" class="seg-btn" data-m="p">实体奖牌</button>
+        <button type="button" class="seg-btn" data-m="v">虚拟奖牌</button>
+      </div>
+      <div id="recv-row" hidden>
+        <label class="f-label">收货状态</label>
+        <div class="seg" id="recv-seg">
+          <button type="button" class="seg-btn" data-r="">未设置</button>
+          <button type="button" class="seg-btn active" data-r="y">已收到</button>
+          <button type="button" class="seg-btn" data-r="n">未收到</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn-ghost" id="add-cancel">取消</button>
+      <button type="button" class="btn-primary" id="add-submit">保存记录</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="../vendor/echarts.min.js" integrity="sha384-pPi0zxBAoDu6+JXW/C68UZLvBUUtU+7zonhif43rqj7pxsGyqyqzcian2Rj37Rss" crossorigin="anonymous"></script>
+<script>
+const DATA = {"records":[],"monthly":[],"weekly":[]};
+
+/* ===== 工具函数 ===== */
+const $ = id => document.getElementById(id);
+const fmtDate = d => { const [y,m,dd] = d.split("-"); return parseInt(m)+"月"+parseInt(dd)+"日"; };
+const medalType = r => r[4]; // "p" 实体 "v" 虚拟 "" 无
+const recvType = r => r[5]; // "y" "n" ""
+const catOf = r => {
+  const n = r[0];
+  if (n === "日常跑") return "daily";
+  if (n === "登山" || n === "爬山" || n === "越野跑") return "trail";
+  return "event";
+};
+const CAT_NAMES = { all:"全部", daily:"日常跑", trail:"登山·越野", event:"赛事活动" };
+const fmtDurShort = s => s.replace(/小时/g,"h").replace(/分钟/g,"′").replace(/分/g,"′").replace(/秒/g,"″");
+
+/* 汇总计算（全部由源数据计算，可随数据更新重算） */
+let totalKm=0, totalSecs=0, totalCount=0, avgPace=0;
+let medals={p:0,v:0}, recv={y:0,n:0}, catCount={all:0,daily:0,trail:0,event:0};
+let medalTotal=0;
+let paced=[], fastest=null, slowest=null;
+let PB=[];
+let monthlyVar=[], weeklyVar=[];
+const fmtPace = s => Math.floor(s/60)+"'"+(String(s%60).padStart(2,"0"))+'"';
+function computeAll(){
+  totalKm = DATA.records.reduce((s,r)=>s+r[1],0);
+  totalSecs = DATA.records.reduce((s,r)=>s+r[6],0);
+  totalCount = DATA.records.length;
+  avgPace = Math.round(totalSecs/totalKm);
+  medals = { p:0, v:0 };
+  recv = { y:0, n:0 };
+  catCount = { all:totalCount, daily:0, trail:0, event:0 };
+  DATA.records.forEach(r=>{
+    if (r[4]) medals[r[4]]++;
+    if (r[5]) recv[r[5]]++;
+    catCount[catOf(r)]++;
+  });
+  medalTotal = medals.p + medals.v;
+
+  /* 配速极限 */
+  paced = DATA.records.filter(r=>r[6]>0 && r[1]>0);
+  paced.sort((a,b)=> (a[6]/a[1])-(b[6]/b[1]));
+  fastest = paced[0] || null; slowest = paced[paced.length-1] || null;
+
+  /* 各距离最佳 */
+  const bestFor = (lo,hi)=>{
+    const cands = DATA.records.filter(r=>r[1]>=lo && r[1]<=hi && r[6]>0);
+    if (!cands.length) return null;
+    return cands.reduce((a,b)=> a[6]<b[6]?a:b);
+  };
+  PB = [
+    ["3公里",2.5,3.5],["5公里",4.5,5.5],["10公里",9.5,10.5],["15公里",14.5,15.5],["半程马拉松",20.5,22]
+  ].map(([l,lo,hi])=>({label:l, rec:bestFor(lo,hi)}));
+
+  monthlyVar = DATA.monthly || [];
+  weeklyVar = DATA.weekly || [];
+}
+
+/* ===== 渲染：总览 ===== */
+function renderOverview(){
+  $("kpi-km").innerHTML = totalKm.toFixed(2)+"<small>km</small>";
+  $("kpi-count").innerHTML = totalCount+"<small>次</small>";
+  $("kpi-hours").innerHTML = (totalSecs/3600).toFixed(1)+"<small>h</small>";
+  $("kpi-pace").innerHTML = fmtPace(avgPace)+"<small>/km</small>";
+
+  // 月跑量图
+  const months = monthlyVar.map(m=> m[0].slice(5)+"月");
+  const kmData = monthlyVar.map(m=> m[1]);
+  const cntData = monthlyVar.map(m=> m[2]);
+  const maxIdx = kmData.indexOf(Math.max(...kmData));
+  $("month-note").textContent = monthlyVar[maxIdx][0].slice(5)+"月跑量最高（"+kmData[maxIdx].toFixed(2)+" km，"+cntData[maxIdx]+" 次），占全年 "+(kmData[maxIdx]/totalKm*100).toFixed(0)+"%";
+
+  monthChart.setOption({
+    color:["#14694A"],
+    grid:{left:44,right:12,top:18,bottom:26},
+    tooltip:{trigger:"axis",confine:true,backgroundColor:"#24332C",borderWidth:0,textStyle:{color:"#fff",fontSize:12},
+      formatter:p=>{
+        const i=p[0].dataIndex;
+        return months[i]+"　"+kmData[i].toFixed(2)+" km · "+cntData[i]+" 次<br>平均配速 "+monthlyVar[i][3];
+      }},
+    xAxis:{type:"category",data:months,axisLine:{lineStyle:{color:"#E7E1D4"}},axisTick:{show:false},
+      axisLabel:{color:"#5C6B64",fontSize:11,fontFamily:"Noto Sans SC"}},
+    yAxis:{type:"value",name:"km",nameTextStyle:{color:"#8A948F",fontSize:10},
+      axisLabel:{color:"#8A948F",fontSize:10,fontFamily:"Barlow Condensed"},
+      splitLine:{lineStyle:{color:"#EFEBE0"}}},
+    series:[{
+      type:"bar",data:kmData,barWidth:"46%",
+      itemStyle:{borderRadius:[5,5,0,0]},
+      label:{show:true,position:"top",color:"#14694A",fontSize:10,fontFamily:"Barlow Condensed",
+        formatter:p=>p.value.toFixed(0)}
+    }]
+  });
+
+  // 奖牌一览（环形）
+  medalChart.setOption({
+    color:["#C9962E","#4C7FD4"],
+    title:{text:String(medalTotal)+" 枚",left:"center",top:"34%",textStyle:{color:"#24332C",fontSize:16,fontWeight:700,fontFamily:"Barlow Condensed"}},
+    tooltip:{trigger:"item",confine:true,backgroundColor:"#24332C",borderWidth:0,textStyle:{color:"#fff",fontSize:12},
+      formatter:p=>p.name+"　"+p.value+" 枚（"+(p.value/medalTotal*100).toFixed(0)+"%）"},
+    legend:{show:true,bottom:0,left:"center",icon:"circle",itemWidth:8,itemHeight:8,
+      textStyle:{color:"#5C6B64",fontSize:11}},
+    series:[{
+      type:"pie",radius:["52%","74%"],center:["50%","42%"],
+      label:{show:false},
+      emphasis:{scale:false},
+      data:[
+        {name:"实体奖牌",value:medals.p},
+        {name:"虚拟奖牌",value:medals.v}
+      ]
+    }]
+  });
+
+  // 环形图中心文字
+  const msum = $("medal-summary");
+  msum.innerHTML =
+    '<div class="ms-row"><span class="ms-dot" style="background:#C9962E"></span><span class="v">实体奖牌</span><span class="n">'+medals.p+'</span></div>'+
+    '<div class="ms-row"><span class="ms-dot" style="background:#4C7FD4"></span><span class="v">虚拟奖牌</span><span class="n">'+medals.v+'</span></div>'+
+    '<div class="ms-row"><span class="ms-dot" style="background:#8A948F"></span><span class="v">合计奖牌</span><span class="n">'+medalTotal+'</span></div>';
+
+  // 配速极限（配速采用表格记录口径）
+  $("fast-pace").textContent = fastest[7];
+  $("fast-detail").textContent = fastest[0]+" · "+fastest[1].toFixed(2)+"km · "+fmtDate(fastest[3]);
+  $("slow-pace").textContent = slowest[7];
+  $("slow-detail").textContent = slowest[0]+" · "+slowest[1].toFixed(2)+"km · "+fmtDate(slowest[3]);
+}
+
+/* ===== 渲染：记录 ===== */
+let curCat = "all";
+function renderChips(){
+  $("rec-chips").innerHTML = Object.keys(CAT_NAMES).map(k=>
+    '<button class="chip'+(k===curCat?" active":"")+'" data-cat="'+k+'">'+CAT_NAMES[k]+'<span style="opacity:.7;margin-left:3px">'+catCount[k]+'</span></button>'
+  ).join("");
+  $("rec-chips").querySelectorAll(".chip").forEach(c=>{
+    c.addEventListener("click",()=>{ curCat=c.dataset.cat; renderChips(); renderRecList(); });
+  });
+}
+function medalBadge(r){
+  let html = "";
+  if (r[4]==="p") html += '<span class="badge p">实体奖牌</span>';
+  if (r[4]==="v") html += '<span class="badge v">虚拟奖牌</span>';
+  if (r[5]==="y") html += '<span class="badge y">已收到</span>';
+  if (r[5]==="n") html += '<span class="badge n">未收到</span>';
+  return html;
+}
+let recSearch = "";
+$("rec-search").addEventListener("input", e=>{
+  recSearch = e.target.value.trim().toLowerCase();
+  renderRecList();
+});
+
+function renderRecList(){
+  let list = DATA.records.slice().reverse().map((r,i)=>({r, idx: DATA.records.length-1-i}));
+  if (curCat !== "all") list = list.filter(x=> catOf(x.r)===curCat);
+  if (recSearch){
+    list = list.filter(x=> x.r[0].toLowerCase().includes(recSearch) || (x.r[3]||"").includes(recSearch));
+  }
+  $("rec-sub").textContent = "共 "+list.length+" 条记录 · 按日期倒序"+(recSearch||curCat!=="all"?"（已筛选）":"");
+  if (!list.length){
+    $("rec-list").innerHTML = '<li style="text-align:center;color:var(--ink3);padding:30px 0;font-size:13px">没有符合条件的记录</li>';
+    return;
+  }
+  $("rec-list").innerHTML = list.map((x,i)=>{
+    const r = x.r, idx = x.idx; // 过滤/搜索后仍指向正确原数组索引
+    const coin = r[4] ? '<span class="coin sm '+(r[4]==="p"?"p":"v")+'">'+(r[5]==="n"?'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 7v5M12 16.5v.01"/></svg>':'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>')+'</span>' : "";
+    return '<li class="rec">'+coin+
+      '<div class="rec-main"><div class="rec-name">'+r[0]+'</div>'+
+      '<div class="rec-meta">'+fmtDate(r[3])+' · '+r[1].toFixed(2)+' km · '+r[2]+'</div>'+
+      medalBadge(r)+
+      '<div class="rec-ops">'+
+        '<button type="button" class="rec-op edit" data-edit="'+idx+'">编辑</button>'+
+        '<button type="button" class="rec-op del" data-del="'+idx+'">删除</button>'+
+      '</div></div>'+
+      '<div class="rec-side"><div class="rec-pace">'+r[7]+'</div><div class="rec-km">配速/km</div></div></li>';
+  }).join("");
+  $("rec-list").querySelectorAll("[data-edit]").forEach(b=>b.addEventListener("click",()=>openEdit(+b.dataset.edit)));
+  $("rec-list").querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",()=>delRecord(+b.dataset.del)));
+}
+
+/* ===== 渲染：奖牌 ===== */
+const mIcon = {
+  p:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13.5" r="4.5"/><path d="M9.5 10 8 3.5l4 1.8 4-1.8-1.5 6.5"/></svg>',
+  v:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13.5" r="4.5"/><path d="M8.5 10.5 8 3.5l4 1.8 4-1.8-.5 7"/><path d="M12 15.5v2"/></svg>'
+};
+function renderMedals(){
+  const phys = DATA.records.filter(r=>r[4]==="p");
+  const virt = DATA.records.filter(r=>r[4]==="v");
+  $("mh-sub").textContent = "累计 "+totalKm.toFixed(2)+" km · "+totalCount+" 次跑步";
+  $("mh-counts").innerHTML =
+    '<span class="mh-chip"><b>'+medals.p+'</b>实体</span>'+
+    '<span class="mh-chip"><b>'+medals.v+'</b>虚拟</span>'+
+    '<span class="mh-chip"><b>'+recv.y+'</b>已收到</span>'+
+    '<span class="mh-chip"><b>'+recv.n+'</b>未收到</span>';
+  $("mg-physical-title").innerHTML = '实体奖牌 <span class="cnt">'+medals.p+' 枚 · 已收到 '+recv.y+' / 未收到 '+recv.n+'</span>';
+  $("mg-virtual-title").innerHTML = '虚拟奖牌 <span class="cnt">'+medals.v+' 枚</span>';
+  $("m-physical").innerHTML = phys.map(r=>{
+    const st = r[5]==="y" ? '<span class="badge y st">已收到</span>' : (r[5]==="n" ? '<span class="badge n st">未收到</span>' : '');
+    return '<li class="m-item"><span class="coin p">'+mIcon.p+'</span>'+
+      '<div class="info"><div class="nm">'+r[0]+'</div><div class="meta">'+fmtDate(r[3])+' · '+r[1].toFixed(2)+' km · '+r[2]+'</div></div>'+st+'</li>';
+  }).join("");
+  $("m-virtual").innerHTML = virt.map(r=>
+    '<li class="m-item"><span class="coin v">'+mIcon.v+'</span>'+
+    '<div class="info"><div class="nm">'+r[0]+'</div><div class="meta">'+fmtDate(r[3])+' · '+r[1].toFixed(2)+' km · '+r[2]+'</div></div></li>'
+  ).join("");
+}
+
+/* ===== 渲染：成绩 ===== */
+function renderStats(){
+  $("pb-list").innerHTML = PB.map(pb=>{
+    const r = pb.rec;
+    if (!r) return '<li class="pb empty"><span class="dist">'+pb.label+'</span><div class="body"><div class="nm">暂无记录</div><div class="meta">当前无该距离区间记录</div></div><div class="time">—<small>最佳用时</small></div></li>';
+    return '<li class="pb"><span class="dist">'+pb.label+'</span>'+
+      '<div class="body"><div class="nm">'+r[0]+'</div><div class="meta">'+fmtDate(r[3])+' · '+r[1].toFixed(2)+' km</div></div>'+
+      '<div class="time">'+fmtDurShort(r[2])+'<small>配速 '+r[7]+'</small></div></li>';
+  }).join("");
+
+  const wk = weeklyVar;
+  const maxKm = Math.max(...wk.map(w=>w[2]));
+  $("week-list").innerHTML = wk.map(w=>
+    '<li class="week"><span class="w">'+w[0]+'</span>'+
+    '<div class="bar-track"><div class="bar'+(w[2]===maxKm?" max":"")+'" style="width:'+(w[2]/maxKm*100).toFixed(1)+'%"></div></div>'+
+    '<span class="v">'+w[2].toFixed(1)+'</span></li>'
+  ).join("");
+}
+
+/* ===== 图表 ===== */
+const monthChart = echarts.init($("month-chart"));
+const medalChart = echarts.init($("medal-donut"));
+new ResizeObserver(()=>monthChart.resize()).observe($("month-chart"));
+new ResizeObserver(()=>medalChart.resize()).observe($("medal-donut"));
+
+/* ===== 路由 ===== */
+const TITLES = { overview:"总览", records:"记录", medals:"奖牌", stats:"成绩" };
+function showTab(name){
+  document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
+  $("view-"+name).classList.add("active");
+  document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("active", t.dataset.tab===name));
+  $("page-title").textContent = TITLES[name];
+  if (name==="overview"){ monthChart.resize(); medalChart.resize(); }
+  if (name==="records") renderRecList();
+}
+document.querySelectorAll(".tab").forEach(t=>{
+  t.addEventListener("click",()=>{ location.hash = t.dataset.tab; });
+});
+function route(){
+  const h = location.hash.replace("#","");
+  showTab(TITLES[h] ? h : "overview");
+}
+window.addEventListener("hashchange", route);
+
+/* ===== 初始化 ===== */
+computeAll();
+renderOverview();
+renderChips();
+renderRecList();
+renderMedals();
+renderStats();
+$("medal-preview").addEventListener("click",()=>{ location.hash = "medals"; });
+route();
+
+/* ===== 数据加载（后端API，失败时用内嵌数据兜底） ===== */
+function applyData(d){
+  DATA.records = d.records;
+  DATA.monthly = d.monthly || [];
+  DATA.weekly = d.weekly || [];
+  computeAll();
+  renderOverview();
+  renderChips();
+  renderRecList();
+  renderMedals();
+  renderStats();
+}
+async function initData(){
+  try {
+    const r = await fetch("/api/data", { cache: "no-store" });
+    if (!r.ok) throw new Error("api " + r.status);
+    const d = await r.json();
+    if (Array.isArray(d.records)) applyData(d);
+  } catch(e){
+    /* 离线或后端未就绪：保留内嵌数据 */
+  }
+}
+initData();
+
+/* ===== 添加 / 编辑记录 ===== */
+const ADD = { type:"daily", medal:"", recv:"y" };
+let EDIT_IDX = null; // null=添加模式；数字=正在编辑的记录索引
+
+function showToast(msg){
+  const t = $("toast");
+  t.textContent = msg;
+  t.hidden = false;
+  clearTimeout(showToast._tm);
+  showToast._tm = setTimeout(()=>{ t.hidden = true; }, 2400);
+}
+
+function bindSeg(segId, handler){
+  const box = $(segId);
+  box.querySelectorAll(".seg-btn").forEach(b=>{
+    b.addEventListener("click", ()=>{
+      box.querySelectorAll(".seg-btn").forEach(x=>x.classList.remove("active"));
+      b.classList.add("active");
+      handler(b);
+    });
+  });
+}
+
+function openAdd(){
+  EDIT_IDX = null;
+  ADD.type = "daily"; ADD.medal = ""; ADD.recv = "y";
+  $("type-seg").querySelectorAll(".seg-btn").forEach((x,i)=>x.classList.toggle("active", i===0));
+  $("medal-seg").querySelectorAll(".seg-btn").forEach((x,i)=>x.classList.toggle("active", i===0));
+  $("recv-seg").querySelectorAll(".seg-btn").forEach((x,i)=>x.classList.toggle("active", i===1));
+  $("event-name-row").hidden = true;
+  $("recv-row").hidden = true;
+  $("f-name").value = "";
+  $("f-date").value = new Date().toISOString().slice(0,10);
+  $("f-km").value = "";
+  $("f-h").value = 0; $("f-m").value = 0; $("f-s").value = 0;
+  $("add-title").textContent = "添加跑步记录";
+  $("add-submit").textContent = "保存记录";
+  $("add-mask").hidden = false;
+}
+function openEdit(idx){
+  const r = DATA.records[idx];
+  if (!r) return;
+  EDIT_IDX = idx;
+  const cat = catOf(r);
+  ADD.type = cat; ADD.medal = r[4] || ""; ADD.recv = r[5] || "y";
+  $("type-seg").querySelectorAll(".seg-btn").forEach(x=>x.classList.toggle("active", x.dataset.t===cat));
+  $("medal-seg").querySelectorAll(".seg-btn").forEach(x=>x.classList.toggle("active", (x.dataset.m||"")===(r[4]||"")));
+  $("recv-seg").querySelectorAll(".seg-btn").forEach(x=>x.classList.toggle("active", (x.dataset.r||"y")===(r[5]||"y")));
+  $("event-name-row").hidden = cat !== "event";
+  $("recv-row").hidden = (r[4] !== "p");
+  $("f-name").value = cat === "event" ? r[0] : "";
+  $("f-date").value = r[3];
+  $("f-km").value = r[1];
+  const secs = r[6];
+  $("f-h").value = Math.floor(secs/3600);
+  $("f-m").value = Math.floor(secs%3600/60);
+  $("f-s").value = secs%60;
+  $("add-title").textContent = "编辑跑步记录";
+  $("add-submit").textContent = "保存修改";
+  $("add-mask").hidden = false;
+}
+function closeAdd(){ $("add-mask").hidden = true; }
+
+bindSeg("type-seg", b=>{
+  ADD.type = b.dataset.t;
+  $("event-name-row").hidden = ADD.type !== "event";
+});
+bindSeg("medal-seg", b=>{
+  ADD.medal = b.dataset.m;
+  $("recv-row").hidden = ADD.medal !== "p";
+});
+bindSeg("recv-seg", b=>{ ADD.recv = b.dataset.r; });
+
+$("fab-add").addEventListener("click", openAdd);
+$("add-close").addEventListener("click", closeAdd);
+$("add-cancel").addEventListener("click", closeAdd);
+$("add-mask").addEventListener("click", e=>{ if (e.target === $("add-mask")) closeAdd(); });
+
+async function submitAdd(){
+  const btn = $("add-submit");
+  const name = ADD.type === "event" ? $("f-name").value.trim() : (ADD.type === "daily" ? "日常跑" : "登山");
+  if (ADD.type === "event" && !name){ showToast("请填写活动名称"); return; }
+  const date = $("f-date").value;
+  const km = parseFloat($("f-km").value);
+  const h = parseInt($("f-h").value,10) || 0;
+  const m = parseInt($("f-m").value,10) || 0;
+  const s = parseInt($("f-s").value,10) || 0;
+  if (!date){ showToast("请选择日期"); return; }
+  if (!isFinite(km) || km <= 0){ showToast("请输入公里数"); return; }
+  if (h===0 && m===0 && s===0){ showToast("请填写用时"); return; }
+  const secs = h*3600 + m*60 + s;
+  const dur = h>0 ? (h+"小时"+m+"分"+s+"秒") : (m+"分钟"+s+"秒");
+  const payload = {
+    name, km: Math.round(km*100)/100, date, secs, dur,
+    medal: ADD.medal,
+    received: ADD.medal === "p" ? ADD.recv : ""
+  };
+  const isEdit = EDIT_IDX !== null;
+  const url = isEdit ? "/api/records?index="+EDIT_IDX : "/api/records";
+  btn.disabled = true;
+  try {
+    const r = await fetch(url, {
+      method: isEdit ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const d = await r.json();
+    if (!r.ok || !d.ok) throw new Error(d.error || "保存失败");
+    applyData(d);
+    closeAdd();
+    showToast((isEdit ? "已修改：" : "已保存：")+name+" · "+km.toFixed(2)+" km");
+  } catch(e){
+    showToast(e.message || "保存失败，请重试");
+  } finally {
+    btn.disabled = false;
+  }
+}
+$("add-submit").addEventListener("click", submitAdd);
+
+async function delRecord(idx){
+  const r = DATA.records[idx];
+  if (!r) return;
+  if (!confirm("确定删除这条记录吗？\n"+r[0]+" · "+r[1].toFixed(2)+" km · "+fmtDate(r[3]))) return;
+  try {
+    const resp = await fetch("/api/records?index="+idx, { method: "DELETE" });
+    const d = await resp.json();
+    if (!resp.ok || !d.ok) throw new Error(d.error || "删除失败");
+    applyData(d);
+    showToast("已删除："+r[0]);
+  } catch(e){
+    showToast(e.message || "删除失败，请重试");
+  }
+}
+</script>
+</body>
+</html>

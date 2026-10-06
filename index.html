@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>小工具页</title>
+<style>
+:root{--bg:#0f1115;--card:#171a21;--fg:#e6e8ee;--dim:#9aa3b2;--accent:#6aa8ff;--line:#252a34}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.7 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+main{max-width:760px;margin:0 auto;padding:40px 20px 64px}
+h1{margin:0 0 6px;font-size:24px}
+.sub{color:var(--dim);font-size:14px;margin-bottom:26px}
+a.card{display:block;background:var(--card);border:1px solid var(--line);border-radius:14px;
+       padding:16px 18px;margin-bottom:12px;text-decoration:none;color:inherit;transition:border-color .15s}
+a.card:hover{border-color:var(--accent)}
+.t{font-size:17px;font-weight:600;margin-bottom:4px}
+.d{color:var(--dim);font-size:13px}
+.tag{display:inline-block;font-size:12px;color:var(--dim);border:1px solid var(--line);
+     border-radius:999px;padding:1px 8px;margin-left:8px;vertical-align:middle}
+footer{color:var(--dim);font-size:12px;margin-top:28px;border-top:1px solid var(--line);padding-top:14px}
+</style>
+</head>
+<body>
+<main>
+  <h1>小工具页</h1>
+  <div class="sub">几个单文件网页，纯静态、无后端。打开即可用，录入的数据只保存在你自己的浏览器里。</div>
+
+  <a class="card" href="running-blank/">
+    <div class="t">跑步记录 · 奖牌统计<span class="tag">空数据</span></div>
+    <div class="d">按日期记录里程与用时，自动汇总月度/周度与奖牌进度，图表展示。</div>
+  </a>
+
+  <a class="card" href="blood-blank/">
+    <div class="t">献血记录 · 管理统计<span class="tag">空数据</span></div>
+    <div class="d">记录献血日期、类型与血量，按折算规则统计次数与奖牌进度。</div>
+  </a>
+
+  <a class="card" href="kaoqin/">
+    <div class="t">考勤与工资计算器<span class="tag">示例版</span></div>
+    <div class="d">月度考勤 → 工资计算：休班额度、加班费、积欠结转、季节工时（8h / 8.5h）。</div>
+  </a>
+
+  <footer>
+    三个页面都自包含、可单独下载使用；无追踪、无账号。图表库
+    <a href="vendor/echarts.min.js" style="color:var(--accent)">ECharts</a> 已本地化（Apache-2.0）。
+  </footer>
+</main>
+</body>
+</html>

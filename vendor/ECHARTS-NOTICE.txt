@@ -1,0 +1,15 @@
+第三方组件归属声明 / Third-party notice
+==========================================
+
+Apache ECharts
+--------------
+文件      : vendor/echarts.min.js
+版本      : 5.6.0
+上游      : https://echarts.apache.org/
+源码仓库  : https://github.com/apache/echarts
+授权      : Apache License 2.0
+授权全文  : https://www.apache.org/licenses/LICENSE-2.0
+获取方式  : registry.npmmirror.com/echarts/5.6.0/files/dist/echarts.min.js
+
+说明：本仓库只是把该库原文件放在本地，以便页面在没有公网 CDN 的环境下也能正常显示图表。
+文件内容未经修改；版权归 Apache Software Foundation 及 ECharts 贡献者所有。
