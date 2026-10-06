@@ -1646,5 +1646,107 @@ $("confirm-ok").addEventListener("click", async ()=>{
   }
 });
 </script>
+<script>
+/* ==== 献血地点两级联动下拉（公开版新增）====================
+   一级：山东省各地级市；二级：该市血站 / 献血屋 / 献血点。
+   选择结果写回页面原有的 #f-place 输入框，因此页面自身保存逻辑无需改动。 */
+(function () {
+  var DATA = {
+    "济南市": ["济南市血液供保中心", "泉城广场献血屋", "洪楼银座献血屋", "高新世茂芯环献血车", "济南市三院献血屋", "中心医院东院区献血屋", "章丘区人民医院献血屋"],
+    "青岛市": ["青岛市中心血站", "台东爱心献血屋", "李村利客来献血屋", "西海岸合美 MALL 献血屋", "辛家庄献血屋", "城阳家佳源献血屋", "胶州利群献血屋", "平度献血屋", "莱西献血屋"],
+    "淄博市": ["淄博市中心血站", "万达广场献血屋", "博山憩园献血屋", "桓台信誉楼献血屋", "淄川通乾广场献血点", "淄博商厦献血点", "高新区银泰城献血点", "临淄方正献血点", "沂源县医院献血点", "一四八医院献血点"],
+    "枣庄市": ["枣庄市中心血站", "三角花园爱心献血屋", "万达广场献血屋", "滕州真爱广场献血屋", "山亭献血屋", "台儿庄献血屋"],
+    "东营市": ["东营市中心血站", "府前小区献血点", "河口银座献血屋", "胜利油田中心医院献血点", "韩国城献血点"],
+    "烟台市": ["烟台市中心血站", "蓬莱献血屋", "三站采血房车", "龙口采血房车", "莱州采血房车", "莱阳采血房车"],
+    "潍坊市": ["潍坊市红十字中心血站", "文化路献血屋", "和平路献血屋", "谷德广场献血屋", "寿光献血屋", "青州献血屋", "诸城献血屋", "高密献血屋", "昌乐献血屋"],
+    "济宁市": ["济宁市中心血站", "文化广场献血屋", "百花公园献血屋", "红星路献血屋", "兖州献血屋", "邹城献血屋", "曲阜献血屋", "金乡献血屋"],
+    "泰安市": ["泰安市中心血站", "万达爱心献血屋", "市中心医院献血屋", "新泰爱心献血屋", "宁阳爱心献血屋", "肥城献血屋", "东平献血屋"],
+    "威海市": ["威海市中心血站", "威高广场献血屋", "高区利群献血屋", "经区体育公园献血屋", "文登献血屋"],
+    "日照市": ["日照市中心血站", "正基爱心献血屋", "大学城献血屋", "莒县献血屋", "五莲献血屋"],
+    "临沂市": ["临沂市中心血站", "人民广场献血房车", "沂水爱心献血屋", "费县献血房车", "罗庄献血屋", "河东献血屋", "兰陵献血屋", "平邑献血屋", "蒙阴献血屋", "临沭献血屋", "莒南献血屋"],
+    "德州市": ["德州市中心血站", "中心广场献血屋", "人民医院献血屋", "平原献血屋", "禹城献血屋", "乐陵献血屋", "宁津献血屋"],
+    "聊城市": ["聊城市中心血站", "人民医院爱心献血屋", "银座商城献血点", "临清献血屋", "高唐献血屋", "东阿献血屋", "阳谷献血屋"],
+    "滨州市": ["滨州市中心血站", "渤海国际爱心献血屋", "万达献血屋", "博兴献血屋", "邹平献血屋", "无棣献血屋"],
+    "菏泽市": ["菏泽市中心血站", "大学路爱心献血屋", "曹县献血屋", "东方红大街献血服务中心", "单县献血屋", "郓城献血屋", "巨野献血屋", "东明献血屋"]
+  };
+
+  function ready(fn) {
+    if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', fn); }
+    else { fn(); }
+  }
+
+  ready(function () {
+    var input = document.getElementById('f-place');
+    var mask = document.getElementById('add-mask');
+    if (!input || !mask) { return; }
+    if (document.getElementById('ls-place-cascade')) { return; }
+
+    var box = document.createElement('div');
+    box.id = 'ls-place-cascade';
+    box.style.cssText = 'display:flex;gap:8px;margin-top:8px';
+
+    var city = document.createElement('select');
+    city.id = 'ls-city';
+    city.className = input.className || 'f-input';
+    city.style.cssText = 'flex:1 1 42%;min-width:0';
+    var site = document.createElement('select');
+    site.id = 'ls-site';
+    site.className = input.className || 'f-input';
+    site.style.cssText = 'flex:1 1 58%;min-width:0';
+
+    var title = document.createElement('div');
+    title.textContent = '献血地点（山东：先选地市，再选献血点）';
+    title.style.cssText = 'font-size:12.5px;color:#8b8378;margin-bottom:2px';
+
+    function fillCities() {
+      var html = '<option value="">选择地市</option>';
+      Object.keys(DATA).forEach(function (c) { html += '<option value="' + c + '">' + c + '</option>'; });
+      html += '<option value="__custom__">其他 / 手填</option>';
+      city.innerHTML = html;
+    }
+    function fillSites(keep) {
+      var list = DATA[city.value] || [];
+      var html = '<option value="">' + (list.length ? '选择献血点' : '请先选地市') + '</option>';
+      list.forEach(function (s) { html += '<option value="' + s + '">' + s + '</option>'; });
+      site.innerHTML = html;
+      site.disabled = list.length === 0;
+      if (keep && list.indexOf(keep) >= 0) { site.value = keep; }
+    }
+    /* 选中的献血点写回原输入框（页面保存逻辑读取的就是它） */
+    function applyToInput() {
+      if (city.value === '__custom__') { input.style.display = ''; input.focus(); return; }
+      input.style.display = 'none';
+      input.value = site.value || '';
+    }
+    function syncFromInput() {
+      var v = (input.value || '').trim();
+      var hit = '';
+      Object.keys(DATA).some(function (c) {
+        if (DATA[c].indexOf(v) >= 0) { hit = c; return true; }
+        return false;
+      });
+      if (hit) { city.value = hit; fillSites(v); site.value = v; input.style.display = 'none'; }
+      else if (v) { city.value = '__custom__'; fillSites(); input.style.display = ''; }
+      else { city.value = ''; fillSites(); site.value = ''; input.style.display = 'none'; }
+    }
+
+    city.addEventListener('change', function () { fillSites(); applyToInput(); });
+    site.addEventListener('change', applyToInput);
+
+    fillCities();
+    fillSites();
+    input.insertAdjacentElement('afterend', box);
+    input.insertAdjacentElement('beforebegin', title);
+    box.appendChild(city);
+    box.appendChild(site);
+
+    /* 每次打开弹层：新增则清空，编辑则按已存地点回填 */
+    new MutationObserver(function () {
+      if (!mask.hidden) { syncFromInput(); }
+    }).observe(mask, { attributes: true, attributeFilter: ['hidden'] });
+    syncFromInput();
+  });
+})();
+</script>
 </body>
 </html>
