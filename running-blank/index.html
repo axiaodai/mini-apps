@@ -778,7 +778,14 @@ main{
     try { localStorage.setItem(dataKey(), JSON.stringify(db)); return true; }
     catch (e) { return false; }
   }
-  function db() { var d = load(); if (!d) { d = { records: [] }; save(d); } if (!Array.isArray(d.records)) { d.records = []; } return d; }
+  function db() {
+    var d = load();
+    if (!d) { d = { records: [] }; save(d); }
+    if (!Array.isArray(d.records)) { d.records = []; }
+    /* 献血页：折算次数是「类型+血量」算出来的派生值，历史记录若写错可安全重算 */
+    try { if (typeof fixConv === 'function' && fixConv(d)) { save(d); } } catch (e) {}
+    return d;
+  }
   function reply(obj, status) {
     var bodyText = JSON.stringify(obj), code = status || 200;
     if (typeof Response === "function") {
@@ -1029,7 +1036,11 @@ main{
     document.body.appendChild(box);
     setTimeout(function () { if (box.parentNode) { try { localStorage.setItem(FLAG, "1"); } catch (e) {} box.remove(); } }, 10000);
   }
-  function boot() { buildToolbar(); firstVisitNotice(); }
+  function boot() {
+    /* 先跑一次 db()：顺带自愈历史记录（如献血页的折算次数），不依赖页面是否取数成功 */
+    try { db(); } catch (e) {}
+    buildToolbar(); firstVisitNotice();
+  }
   if (document.readyState === "loading") { document.addEventListener("DOMContentLoaded", boot); }
   else { boot(); }
   /* ==== 代理结束 ==== */
