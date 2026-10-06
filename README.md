@@ -2,6 +2,8 @@
 
 三个单文件网页，托管在 GitHub Pages 上。纯静态、无后端、无追踪，打开即用。
 
+📌 **注意事项、隔离说明、转发话术：[USAGE-CAUTIONS.md](USAGE-CAUTIONS.md)**
+
 🌐 站点：https://axiaodai.github.io/mini-apps/
 
 | 路径 | 页面 | 说明 |
@@ -46,6 +48,13 @@
     （原页面从接口接收聚合值、并不自行重算，所以必须由代理算）
   - 考勤：`/save` 原样存下 `{uid, edits, salary, debts, incomes, persons, useSrc, ts}`；
     `/userdata` 仅在 uid 匹配时返回，保持"按口令分身份"的隔离语义
+- **同一台设备上多人使用**：跑步/献血页原先只有一个全局存储键，同一浏览器下 B 会看到 A 的记录，
+  因此代理增加了「使用者」层：
+  - 数据键变为 `mini-apps-running-v1::<使用者>`（献血同理），另有 `mini-apps-profiles-v1` 记录名单与当前是谁；
+  - 右下角「使用者」可切换/新建；设备上存在 2 个以上使用者时，**打开页面先弹出「你是哪位？」**，
+    选完才加载数据 —— 从流程上杜绝"误看到别人的记录"；
+  - 导出文件名带使用者名字，避免备份混淆。
+  考勤页本身已按口令分空间存储（`keyOf()`），不需要额外处理。
 - `kaoqin` 是**脱敏示例版**：已移除内嵌考勤表、默认人员与月薪、规则示例中的具体金额。
 - 图表库 `vendor/echarts.min.js` 来自 [Apache ECharts](https://echarts.apache.org/) 5.6.0，
   本地化存放（原页面引用 `cdn.jsdelivr.net`，部分网络不可达），授权见 `vendor/ECHARTS-NOTICE.txt`。
