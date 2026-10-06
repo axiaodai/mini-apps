@@ -750,6 +750,149 @@ main{
 <div class="toast" id="toast" hidden></div>
 
 <script src="../vendor/echarts.min.js" integrity="sha384-pPi0zxBAoDu6+JXW/C68UZLvBUUtU+7zonhif43rqj7pxsGyqyqzcian2Rj37Rss" crossorigin="anonymous"></script>
+<script>/* ==== 本地存储代理（本页由 GitHub Pages 托管时使用）====================
+   原本这些页面依赖 NAS 上的 /api/* 接口；这里改为读写浏览器本地存储，
+   因此每个人打开后录入的数据都保存在自己的浏览器里，互不干扰。
+   右下角额外提供「导出 / 导入」，便于自己备份记录。
+   注：只拦截 /api/ 开头的请求，页面自身逻辑一行未改。            */
+(function () {
+  var KEY = "mini-apps-running-v1";
+  var realFetch = window.fetch ? window.fetch.bind(window) : null;
+  function load() { try { var s = localStorage.getItem(KEY); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
+  function save(db) { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) {} }
+  function db() { var d = load(); if (!d) { d = { records: [] }; save(d); } if (!Array.isArray(d.records)) { d.records = []; } return d; }
+  function reply(obj, status) {
+    return Promise.resolve(new Response(JSON.stringify(obj),
+      { status: status || 200, headers: { "Content-Type": "application/json" } }));
+  }
+  function isoWeek(d) {
+    var t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    var day = t.getUTCDay() || 7;
+    t.setUTCDate(t.getUTCDate() + 4 - day);
+    var y0 = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+    return Math.ceil((((t - y0) / 86400000) + 1) / 7);
+  }
+  function monday(d) { var x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); var k = (x.getDay() + 6) % 7; x.setDate(x.getDate() - k); return x; }
+  function pace(secs, km) { if (!km) return ""; var p = Math.round(secs / km); return Math.floor(p / 60) + "'" + ("0" + (p % 60)).slice(-2) + '"'; }
+  function aggRunning(records) {
+    var byM = {}, byW = {};
+    records.forEach(function (r) {
+      var km = Number(r[1]) || 0, secs = Number(r[6]) || 0, ds = String(r[3] || "");
+      if (ds.length < 10) return;
+      var d = new Date(ds + "T00:00:00");
+      var mk = ds.slice(0, 7);
+      byM[mk] = byM[mk] || { km: 0, n: 0, secs: 0 };
+      byM[mk].km += km; byM[mk].n++; byM[mk].secs += secs;
+      var mon = monday(d), wk = mon.getFullYear() + "-" + mon.getMonth() + "-" + mon.getDate();
+      byW[wk] = byW[wk] || { km: 0, n: 0, mon: mon };
+      byW[wk].km += km; byW[wk].n++;
+    });
+    var monthly = Object.keys(byM).sort().map(function (k) {
+      var m = byM[k];
+      return [k, Math.round(m.km * 100) / 100, m.n, pace(m.secs, m.km)];
+    });
+    var weekly = Object.keys(byW).map(function (k) { return byW[k]; })
+      .sort(function (a, b) { return a.mon - b.mon; })
+      .map(function (w) {
+        var sun = new Date(w.mon.getFullYear(), w.mon.getMonth(), w.mon.getDate() + 6);
+        var lbl = function (x) { return (x.getMonth() + 1) + "/" + x.getDate(); };
+        return ["第" + isoWeek(w.mon) + "周", lbl(w.mon) + "~" + lbl(sun), Math.round(w.km * 100) / 100, w.n];
+      });
+    return { monthly: monthly, weekly: weekly };
+  }
+  /* running: 对象 -> 记录数组 */
+  function toRecord(b) {
+    var km = Number(b.km) || 0, secs = Number(b.secs) || 0;
+    return [b.name || "", Math.round(km * 100) / 100, b.dur || "", b.date || "",
+            b.medal || "", b.received || "", secs, pace(secs, km)];
+  }
+  function full(d) { var a = aggRunning(d.records); return { records: d.records, monthly: a.monthly, weekly: a.weekly }; }
+  window.fetch = function (input, init) {
+    var url = (typeof input === "string") ? input : ((input && input.url) || "");
+    if (url.indexOf("/api/") !== 0) { return realFetch ? realFetch(input, init) : Promise.reject(new Error("fetch unavailable")); }
+    init = init || {};
+    var method = ((init.method || "GET") + "").toUpperCase();
+    var d = db();
+    if (method === "GET") { return reply(full(d)); }
+    var body = {};
+    try { body = init.body ? JSON.parse(init.body) : {}; } catch (e) { return reply({ ok: false, error: "bad json" }, 400); }
+    var mi = /index=(\d+)/.exec(url);
+    var idx = mi ? parseInt(mi[1], 10) : -1;
+    if (method === "POST") { d.records.push(toRecord(body)); }
+    else if (method === "PUT") { if (idx >= 0 && idx < d.records.length) { d.records[idx] = toRecord(body); } else { return reply({ ok: false, error: "index out of range" }, 400); } }
+    else if (method === "DELETE") { if (idx >= 0 && idx < d.records.length) { d.records.splice(idx, 1); } else { return reply({ ok: false, error: "index out of range" }, 400); } }
+    else { return reply({ ok: false, error: "unsupported" }, 405); }
+    save(d);
+    var out = full(d);
+    out.ok = true;
+    return reply(out);
+  };
+  function toast(msg) {
+    var t = document.createElement("div");
+    t.textContent = msg;
+    t.style.cssText = "position:fixed;left:50%;bottom:150px;transform:translateX(-50%);z-index:10000;" +
+      "background:#2b3446;color:#e6e8ee;padding:8px 14px;border-radius:999px;font:13px/1.4 -apple-system,sans-serif;" +
+      "box-shadow:0 4px 14px rgba(0,0,0,.4)";
+    document.body.appendChild(t);
+    setTimeout(function () { t.remove(); }, 2200);
+  }
+  function refresh() {
+    try { if (typeof initData === "function") { initData(); return; } } catch (e) {}
+    location.reload();
+  }
+  function buildToolbar() {
+    if (document.getElementById("ls-tools")) return;
+    var bar = document.createElement("div");
+    bar.id = "ls-tools";
+    bar.style.cssText = "position:fixed;right:12px;bottom:96px;z-index:9999;display:flex;flex-direction:column;gap:8px";
+    var mk = function (label, fn, title) {
+      var b = document.createElement("button");
+      b.textContent = label; b.title = title || "";
+      b.style.cssText = "padding:7px 11px;border-radius:10px;border:1px solid #2a3040;background:#1b2130;" +
+        "color:#cfd8e3;font:12px/1 -apple-system,'Microsoft YaHei',sans-serif;cursor:pointer;opacity:.92";
+      b.addEventListener("click", fn);
+      return b;
+    };
+    var file = document.createElement("input");
+    file.type = "file"; file.accept = ".json,application/json"; file.style.display = "none";
+    file.addEventListener("change", function () {
+      var f = file.files && file.files[0];
+      if (!f) return;
+      var fr = new FileReader();
+      fr.onload = function () {
+        try {
+          var obj = JSON.parse(fr.result);
+          var recs = Array.isArray(obj) ? obj : obj.records;
+          if (!Array.isArray(recs)) throw new Error("文件里没有 records 数组");
+          if (!confirm("导入将覆盖当前 " + db().records.length + " 条记录，继续？")) return;
+          save({ records: recs });
+          refresh();
+          toast("已导入 " + recs.length + " 条记录");
+        } catch (e) { alert("导入失败：" + e.message); }
+      };
+      fr.readAsText(f, "utf-8");
+      file.value = "";
+    });
+    bar.appendChild(mk("导出", function () {
+      var data = JSON.stringify(db(), null, 2);
+      var blob = new Blob([data], { type: "application/json" });
+      var a = document.createElement("a");
+      var d = new Date(), p = function (n) { return ("0" + n).slice(-2); };
+      a.href = URL.createObjectURL(blob);
+      a.download = "running-records-" + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + ".json";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+      toast("已导出 " + db().records.length + " 条记录");
+    }, "把记录下载成 JSON 文件备份"));
+    bar.appendChild(mk("导入", function () { file.click(); }, "从导出的 JSON 恢复记录"));
+    bar.appendChild(file);
+    document.body.appendChild(bar);
+  }
+  if (document.readyState === "loading") { document.addEventListener("DOMContentLoaded", buildToolbar); }
+  else { buildToolbar(); }
+  /* ==== 代理结束 ==== */
+})();
+</script>
 <script>
 const DATA = {"records":[],"monthly":[],"weekly":[]};
 
