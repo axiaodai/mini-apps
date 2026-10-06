@@ -1872,5 +1872,34 @@ $("confirm-ok").addEventListener("click", async ()=>{
   });
 })();
 </script>
+<script>
+/* ==== 积分字段：注明各地标准不同、可留空（公开版新增）============
+   积分不影响折算次数与奖牌进度，仅作记录；各地规则不同，故保持手填。 */
+(function () {
+  function ready(fn) {
+    if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', fn); }
+    else { fn(); }
+  }
+  ready(function () {
+    var input = document.getElementById('f-points');
+    if (!input || document.getElementById('ls-points-hint')) { return; }
+    /* 标签注明可选与地区差异 */
+    var labels = document.querySelectorAll('label.f-label');
+    for (var i = 0; i < labels.length; i++) {
+      if ((labels[i].textContent || '').trim() === '积分') {
+        labels[i].textContent = '积分（可选 · 各地标准不同）';
+        break;
+      }
+    }
+    var hint = document.createElement('div');
+    hint.id = 'ls-points-hint';
+    hint.style.cssText = 'font-size:12px;color:#8b8378;line-height:1.5;margin-top:4px';
+    hint.textContent = '各地献血积分规则不同（有的按血量、有的按次数、有的按治疗量），按当地标准填写即可；不清楚就留空。';
+    var anchor = input.closest ? (input.closest('.f-unit') || input) : input;
+    anchor.insertAdjacentElement('afterend', hint);
+    input.placeholder = '按当地标准，可留空';
+  });
+})();
+</script>
 </body>
 </html>
