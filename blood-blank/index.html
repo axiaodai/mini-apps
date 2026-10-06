@@ -903,7 +903,14 @@ main{
     try { localStorage.setItem(dataKey(), JSON.stringify(db)); return true; }
     catch (e) { return false; }
   }
-  function db() { var d = load(); if (!d) { d = { records: [] }; save(d); } if (!Array.isArray(d.records)) { d.records = []; } return d; }
+  function db() {
+    var d = load();
+    if (!d) { d = { records: [] }; save(d); }
+    if (!Array.isArray(d.records)) { d.records = []; }
+    /* 献血页：折算次数是「类型+血量」算出来的派生值，历史记录若写错可安全重算 */
+    try { if (typeof fixConv === 'function' && fixConv(d)) { save(d); } } catch (e) {}
+    return d;
+  }
   function reply(obj, status) {
     var bodyText = JSON.stringify(obj), code = status || 200;
     if (typeof Response === "function") {
@@ -954,10 +961,28 @@ main{
       });
     return { monthly: monthly, weekly: weekly };
   }
-  /* blood: 对象 -> 记录数组 [日期, 类型, 血量, 次数, 地点, 积分, 备注] */
+  /* blood 记录格式（由页面渲染代码确定）：
+     [0]日期 [1]类型 [2]血量(ml)/治疗量 [3]折算次数 [4]地点 [5]积分 [6]备注
+     折算口径：全血 = ml/200；血小板 = 治疗量数（1 治疗量 = 1 次） */
+  function convOf(type, amount) {
+    var a = Number(amount) || 0;
+    return type === "全血" ? Math.round(a / 200 * 100) / 100 : a;
+  }
   function toRecord(b) {
-    return [b.date || "", b.type || "", Number(b.amount) || 0, Number(b.points) || 0,
+    return [b.date || "", b.type || "", Number(b.amount) || 0, convOf(b.type, b.amount),
             b.place || "", Number(b.points) || 0, b.note || ""];
+  }
+  /* 修正历史数据里写错的折算次数（派生值，重算不会丢信息） */
+  function fixConv(d) {
+    var changed = false;
+    (d.records || []).forEach(function (r) {
+      if (!Array.isArray(r) || r.length < 7) { return; }
+      var t = String(r[1] || ""), a = Number(r[2]) || 0;
+      if (t !== "全血" && t !== "血小板") { return; }
+      var want = convOf(t, a);
+      if (Number(r[3]) !== want) { r[3] = want; changed = true; }
+    });
+    return changed;
   }
   function full(d) { return { records: d.records }; }
   /* ---------- 请求代理 ---------- */
