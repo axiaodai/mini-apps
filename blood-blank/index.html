@@ -879,7 +879,8 @@ main{
 <script>/* ==== 本地存储代理（公开版：不连服务器 · 按使用者隔离） ====
    这些页面原本调用 NAS 上的 /api/*；公开版改为读写浏览器本地存储。
    同一台设备上可以有多位使用者，各自的数据互不可见。
-   右下角提供「导出 / 导入」备份，以及「换人」切换使用者。             */
+   左下角小按钮里提供「使用者 / 导出 / 导入 / 说明」。
+   注意：本浮层的 z-index 低于页面弹层（100），填写数据时会被自动盖住，不会挡住按钮。 */
 (function () {
   var BASE_KEY = "mini-apps-blood-v1";
   var PROF_KEY = "mini-apps-profiles-v1";
@@ -897,9 +898,11 @@ main{
   function writeProfiles(o) { try { localStorage.setItem(PROF_KEY, JSON.stringify(o)); } catch (e) {} }
   function currentUser() { return readProfiles().current; }
   function dataKey() { return BASE_KEY + "::" + currentUser(); }
-
   function load() { try { var s = localStorage.getItem(dataKey()); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
-  function save(db) { try { localStorage.setItem(dataKey(), JSON.stringify(db)); } catch (e) {} }
+  function save(db) {
+    try { localStorage.setItem(dataKey(), JSON.stringify(db)); return true; }
+    catch (e) { return false; }
+  }
   function db() { var d = load(); if (!d) { d = { records: [] }; save(d); } if (!Array.isArray(d.records)) { d.records = []; } return d; }
   function reply(obj, status) {
     var bodyText = JSON.stringify(obj), code = status || 200;
@@ -907,9 +910,8 @@ main{
       try {
         return Promise.resolve(new Response(bodyText,
           { status: code, headers: { "Content-Type": "application/json" } }));
-      } catch (e) { /* 落到下面的兼容实现 */ }
+      } catch (e) { /* 落到兼容实现 */ }
     }
-    /* 兼容老内核（部分安卓 WebView / 微信内置浏览器没有 Response） */
     return Promise.resolve({
       ok: code >= 200 && code < 300, status: code, statusText: "",
       headers: { get: function () { return "application/json"; } },
@@ -974,7 +976,7 @@ main{
     else if (method === "PUT") { if (idx >= 0 && idx < d.records.length) { d.records[idx] = toRecord(body); } else { return reply({ ok: false, error: "index out of range" }, 400); } }
     else if (method === "DELETE") { if (idx >= 0 && idx < d.records.length) { d.records.splice(idx, 1); } else { return reply({ ok: false, error: "index out of range" }, 400); } }
     else { return reply({ ok: false, error: "unsupported" }, 405); }
-    save(d);
+    if (!save(d)) { return reply({ ok: false, error: "浏览器存储写入失败（可能是无痕模式或空间不足）" }, 507); }
     var out = full(d);
     out.ok = true;
     return reply(out);
@@ -984,7 +986,7 @@ main{
   function toast(msg) {
     var t = document.createElement("div");
     t.textContent = msg;
-    t.style.cssText = "position:fixed;left:50%;bottom:150px;transform:translateX(-50%);z-index:10000;" +
+    t.style.cssText = "position:fixed;left:50%;bottom:150px;transform:translateX(-50%);z-index:95;pointer-events:none;" +
       "background:#2b3446;color:#e6e8ee;padding:8px 14px;border-radius:999px;font:13px/1.4 -apple-system,sans-serif;" +
       "box-shadow:0 4px 14px rgba(0,0,0,.4)";
     document.body.appendChild(t);
@@ -1007,21 +1009,34 @@ main{
   }
   function updateUserLabel() {
     var b = document.getElementById("ls-user");
-    if (b) { b.textContent = "使用者：" + currentUser(); b.title = "点击切换 / 新建使用者（数据按使用者隔离）"; }
+    if (b) { b.textContent = "使用者：" + currentUser(); }
+  }
+  function btn(label, fn, id) {
+    var b = document.createElement("button");
+    b.textContent = label;
+    if (id) b.id = id;
+    b.style.cssText = "display:block;width:100%;text-align:left;white-space:nowrap;padding:8px 12px;border-radius:9px;" +
+      "border:1px solid #2a3040;background:#1b2130;color:#dfe6ef;font:13px/1 -apple-system,'Microsoft YaHei',sans-serif;cursor:pointer";
+    b.addEventListener("click", function (e) { e.stopPropagation(); fn(); });
+    return b;
   }
   function buildToolbar() {
     if (document.getElementById("ls-tools")) return;
-    var bar = document.createElement("div");
-    bar.id = "ls-tools";
-    bar.style.cssText = "position:fixed;right:12px;bottom:96px;z-index:9999;display:flex;flex-direction:column;gap:8px;align-items:flex-end";
-    var mk = function (label, fn, title, id) {
-      var b = document.createElement("button");
-      b.textContent = label; b.title = title || ""; if (id) b.id = id;
-      b.style.cssText = "padding:7px 11px;border-radius:10px;border:1px solid #2a3040;background:#1b2130;" +
-        "color:#cfd8e3;font:12px/1 -apple-system,'Microsoft YaHei',sans-serif;cursor:pointer;opacity:.92";
-      b.addEventListener("click", fn);
-      return b;
-    };
+    /* z-index 70 < 页面弹层 100：填写数据时本浮层会被自动盖住 */
+    var wrap = document.createElement("div");
+    wrap.id = "ls-tools";
+    wrap.style.cssText = "position:fixed;left:10px;bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:70";
+    var toggle = document.createElement("button");
+    toggle.id = "ls-toggle";
+    toggle.textContent = "☰";
+    toggle.title = "记录工具（使用者 / 导出 / 导入 / 说明）";
+    toggle.style.cssText = "width:38px;height:38px;border-radius:11px;border:1px solid #2a3040;background:rgba(27,33,48,.92);" +
+      "color:#cfd8e3;font-size:17px;line-height:1;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.35)";
+    var panel = document.createElement("div");
+    panel.id = "ls-panel";
+    panel.style.cssText = "display:none;position:absolute;left:0;bottom:46px;flex-direction:column;gap:6px;" +
+      "background:rgba(23,26,33,.97);border:1px solid #2a3040;border-radius:12px;padding:8px;min-width:150px;" +
+      "box-shadow:0 8px 24px rgba(0,0,0,.45)";
     var file = document.createElement("input");
     file.type = "file"; file.accept = ".json,application/json"; file.style.display = "none";
     file.addEventListener("change", function () {
@@ -1034,7 +1049,7 @@ main{
           var recs = Array.isArray(obj) ? obj : obj.records;
           if (!Array.isArray(recs)) throw new Error("文件里没有 records 数组");
           if (!confirm("导入将覆盖「" + currentUser() + "」当前的 " + db().records.length + " 条记录，继续？")) return;
-          save({ records: recs });
+          if (!save({ records: recs })) { alert("写入失败：可能是无痕模式或存储空间不足"); return; }
           refresh();
           toast("已导入 " + recs.length + " 条记录到「" + currentUser() + "」");
         } catch (e) { alert("导入失败：" + e.message); }
@@ -1042,15 +1057,19 @@ main{
       fr.readAsText(f, "utf-8");
       file.value = "";
     });
-    bar.appendChild(mk("使用者：" + currentUser(), function () {
+    toggle.addEventListener("click", function (e) {
+      e.stopPropagation();
+      panel.style.display = (panel.style.display === "none" || !panel.style.display) ? "flex" : "none";
+    });
+    document.addEventListener("click", function () { panel.style.display = "none"; });
+    panel.appendChild(btn("使用者：" + currentUser(), function () {
       var o = readProfiles();
-      var name = prompt("换人 / 新建使用者（数据按使用者隔离，互不可见）\n\n已有：" +
-        o.list.join("、") + "\n\n请输入使用者名字：", "");
+      var name = prompt("换人 / 新建使用者（数据按使用者隔离，互不可见）\n\n已有：" + o.list.join("、") +
+        "\n\n请输入使用者名字（留空取消）：", "");
       if (name) switchUser(name);
-    }, "点击切换 / 新建使用者（数据按使用者隔离）", "ls-user"));
-    bar.appendChild(mk("导出", function () {
-      var data = JSON.stringify(db(), null, 2);
-      var blob = new Blob([data], { type: "application/json" });
+    }, "ls-user"));
+    panel.appendChild(btn("导出备份", function () {
+      var blob = new Blob([JSON.stringify(db(), null, 2)], { type: "application/json" });
       var a = document.createElement("a");
       var d = new Date(), p = function (n) { return ("0" + n).slice(-2); };
       a.href = URL.createObjectURL(blob);
@@ -1058,28 +1077,31 @@ main{
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
       toast("已导出「" + currentUser() + "」的 " + db().records.length + " 条记录");
-    }, "把当前使用者的记录下载成 JSON 备份"));
-    bar.appendChild(mk("导入", function () { file.click(); }, "从导出的 JSON 恢复记录"));
-    bar.appendChild(mk("说明", function () {
+    }, "ls-export"));
+    panel.appendChild(btn("导入恢复", function () { file.click(); }, "ls-import"));
+    panel.appendChild(btn("使用说明", function () {
       alert("数据只保存在你自己的浏览器里，不会上传，也不会与别人混在一起。\n\n" +
             "· 多人共用一台设备/一个浏览器时，请各自点「使用者」新建一个名字；\n" +
             "  数据按使用者分开存放，互相看不到。\n" +
             "· 不要用无痕/隐私模式（关掉窗口数据就没了）。\n" +
-            "· 换设备、换浏览器、清理浏览器数据前，先点「导出」备份，新设备点「导入」恢复。");
-    }, "关于数据存放与隔离"));
-    bar.appendChild(file);
-    document.body.appendChild(bar);
+            "· 换设备、换浏览器、清理浏览器数据前，先点「导出备份」，新设备点「导入恢复」。");
+    }, "ls-help"));
+    wrap.appendChild(toggle);
+    wrap.appendChild(panel);
+    wrap.appendChild(file);
+    document.body.appendChild(wrap);
     updateUserLabel();
     maybeAskWho();
   }
-  /* 设备上有多位使用者时，先问清是谁，再加载数据 —— 避免误看到别人的记录 */
+  /* 设备上有多位使用者时先问清是谁；永远可以「先不切换」，不会锁死 */
   function maybeAskWho() {
     var o = readProfiles();
     if (o.list.length < 2 || sessionStorage.getItem("ls-picked") === "1") return;
     var mask = document.createElement("div");
     mask.id = "ls-who";
-    mask.style.cssText = "position:fixed;inset:0;z-index:10001;background:rgba(8,10,14,.72);display:flex;" +
+    mask.style.cssText = "position:fixed;inset:0;z-index:80;background:rgba(8,10,14,.72);display:flex;" +
       "align-items:center;justify-content:center;padding:20px";
+    mask.addEventListener("click", function (e) { if (e.target === mask) { sessionStorage.setItem("ls-picked", "1"); mask.remove(); } });
     var card = document.createElement("div");
     card.style.cssText = "background:#171a21;border:1px solid #2a3040;border-radius:14px;padding:16px;max-width:340px;width:100%;" +
       "color:#e6e8ee;font:14px/1.6 -apple-system,'Microsoft YaHei',sans-serif";
@@ -1099,28 +1121,37 @@ main{
       });
       card.appendChild(b);
     });
+    var skip = document.createElement("button");
+    skip.textContent = "先不切换（继续用 " + o.current + "）";
+    skip.style.cssText = "display:block;width:100%;margin-top:10px;padding:9px;border-radius:10px;border:1px dashed #3a445c;" +
+      "background:transparent;color:#9aa3b2;font-size:13px;cursor:pointer";
+    skip.addEventListener("click", function () { sessionStorage.setItem("ls-picked", "1"); mask.remove(); });
+    card.appendChild(skip);
     mask.appendChild(card);
     document.body.appendChild(mask);
   }
-  /* 首次访问提示 */
+  /* 首次访问提示：不拦截点击，10 秒后自动消失 */
   function firstVisitNotice() {
     var FLAG = BASE_KEY + "-noticed";
     try { if (localStorage.getItem(FLAG)) return; } catch (e) { return; }
     var box = document.createElement("div");
-    box.style.cssText = "position:fixed;left:8px;right:8px;top:8px;z-index:10000;background:#1b2130;color:#dfe6ef;" +
-      "border:1px solid #2a3040;border-radius:12px;padding:10px 12px;font:13px/1.6 -apple-system,'Microsoft YaHei',sans-serif;" +
-      "box-shadow:0 6px 18px rgba(0,0,0,.45)";
-    box.innerHTML = "<b>数据只保存在你自己的浏览器里</b>，不上传、也不会与别人混在一起。" +
-      "多人共用一台设备时，请点右下角「使用者」建一个自己的名字。换设备前先「导出」备份。";
+    box.id = "ls-notice";
+    box.style.cssText = "position:fixed;left:8px;right:8px;top:8px;z-index:65;pointer-events:none;" +
+      "background:rgba(27,33,48,.95);color:#dfe6ef;border:1px solid #2a3040;border-radius:12px;padding:9px 11px;" +
+      "font:12.5px/1.55 -apple-system,'Microsoft YaHei',sans-serif;box-shadow:0 6px 18px rgba(0,0,0,.45)";
+    box.innerHTML = "<b>数据只保存在你自己的浏览器里</b>，不上传、不与别人混。多人共用设备请用左下角「☰ → 使用者」。";
     var ok = document.createElement("button");
     ok.textContent = "知道了";
-    ok.style.cssText = "margin-left:8px;padding:4px 10px;border-radius:8px;border:1px solid #38415a;background:#252d3f;color:#cfd8e3;cursor:pointer";
-    ok.addEventListener("click", function () {
-      try { localStorage.setItem(FLAG, "1"); } catch (e) {}
+    ok.style.cssText = "margin-left:6px;padding:3px 9px;border-radius:8px;border:1px solid #38415a;background:#252d3f;" +
+      "color:#cfd8e3;cursor:pointer;pointer-events:auto";
+    ok.addEventListener("click", function (e) {
+      e.stopPropagation();
+      try { localStorage.setItem(FLAG, "1"); } catch (e2) {}
       box.remove();
     });
     box.appendChild(ok);
     document.body.appendChild(box);
+    setTimeout(function () { if (box.parentNode) { try { localStorage.setItem(FLAG, "1"); } catch (e) {} box.remove(); } }, 10000);
   }
   function boot() { buildToolbar(); firstVisitNotice(); }
   if (document.readyState === "loading") { document.addEventListener("DOMContentLoaded", boot); }
