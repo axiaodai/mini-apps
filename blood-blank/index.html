@@ -1178,7 +1178,11 @@ main{
     document.body.appendChild(box);
     setTimeout(function () { if (box.parentNode) { try { localStorage.setItem(FLAG, "1"); } catch (e) {} box.remove(); } }, 10000);
   }
-  function boot() { buildToolbar(); firstVisitNotice(); }
+  function boot() {
+    /* 先跑一次 db()：顺带自愈历史记录（如献血页的折算次数），不依赖页面是否取数成功 */
+    try { db(); } catch (e) {}
+    buildToolbar(); firstVisitNotice();
+  }
   if (document.readyState === "loading") { document.addEventListener("DOMContentLoaded", boot); }
   else { boot(); }
   /* ==== 代理结束 ==== */
