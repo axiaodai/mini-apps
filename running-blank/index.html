@@ -777,8 +777,20 @@ main{
   function save(db) { try { localStorage.setItem(dataKey(), JSON.stringify(db)); } catch (e) {} }
   function db() { var d = load(); if (!d) { d = { records: [] }; save(d); } if (!Array.isArray(d.records)) { d.records = []; } return d; }
   function reply(obj, status) {
-    return Promise.resolve(new Response(JSON.stringify(obj),
-      { status: status || 200, headers: { "Content-Type": "application/json" } }));
+    var bodyText = JSON.stringify(obj), code = status || 200;
+    if (typeof Response === "function") {
+      try {
+        return Promise.resolve(new Response(bodyText,
+          { status: code, headers: { "Content-Type": "application/json" } }));
+      } catch (e) { /* 落到下面的兼容实现 */ }
+    }
+    /* 兼容老内核（部分安卓 WebView / 微信内置浏览器没有 Response） */
+    return Promise.resolve({
+      ok: code >= 200 && code < 300, status: code, statusText: "",
+      headers: { get: function () { return "application/json"; } },
+      json: function () { return Promise.resolve(JSON.parse(bodyText)); },
+      text: function () { return Promise.resolve(bodyText); }
+    });
   }
   function isoWeek(d) {
     var t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
@@ -1062,8 +1074,9 @@ function renderOverview(){
   const months = monthlyVar.map(m=> m[0].slice(5)+"月");
   const kmData = monthlyVar.map(m=> m[1]);
   const cntData = monthlyVar.map(m=> m[2]);
-  const maxIdx = kmData.indexOf(Math.max(...kmData));
-  $("month-note").textContent = monthlyVar[maxIdx][0].slice(5)+"月跑量最高（"+kmData[maxIdx].toFixed(2)+" km，"+cntData[maxIdx]+" 次），占全年 "+(kmData[maxIdx]/totalKm*100).toFixed(0)+"%";
+  const maxIdx = kmData.length ? kmData.indexOf(Math.max(...kmData)) : -1;
+  if (maxIdx < 0) { $("month-note").textContent = "暂无记录：点右下角「＋」添加第一条"; }
+  else { $("month-note").textContent = monthlyVar[maxIdx][0].slice(5)+"月跑量最高（"+kmData[maxIdx].toFixed(2)+" km，"+cntData[maxIdx]+" 次），占全年 "+(kmData[maxIdx]/totalKm*100).toFixed(0)+"%"; }
 
   monthChart.setOption({
     color:["#14694A"],
@@ -1113,10 +1126,11 @@ function renderOverview(){
     '<div class="ms-row"><span class="ms-dot" style="background:#8A948F"></span><span class="v">合计奖牌</span><span class="n">'+medalTotal+'</span></div>';
 
   // 配速极限（配速采用表格记录口径）
-  $("fast-pace").textContent = fastest[7];
-  $("fast-detail").textContent = fastest[0]+" · "+fastest[1].toFixed(2)+"km · "+fmtDate(fastest[3]);
-  $("slow-pace").textContent = slowest[7];
-  $("slow-detail").textContent = slowest[0]+" · "+slowest[1].toFixed(2)+"km · "+fmtDate(slowest[3]);
+  const _hasPace = !!(fastest && slowest);
+  $("fast-pace").textContent = _hasPace ? fastest[7] : "—";
+  $("fast-detail").textContent = _hasPace ? (fastest[0]+" · "+fastest[1].toFixed(2)+"km · "+fmtDate(fastest[3])) : "暂无记录";
+  $("slow-pace").textContent = _hasPace ? slowest[7] : "—";
+  $("slow-detail").textContent = _hasPace ? (slowest[0]+" · "+slowest[1].toFixed(2)+"km · "+fmtDate(slowest[3])) : "暂无记录";
 }
 
 /* ===== 渲染：记录 ===== */
