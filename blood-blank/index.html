@@ -1009,8 +1009,35 @@ main{
       toast("已导出 " + db().records.length + " 条记录");
     }, "把记录下载成 JSON 文件备份"));
     bar.appendChild(mk("导入", function () { file.click(); }, "从导出的 JSON 恢复记录"));
+    bar.appendChild(mk("说明", function () {
+      alert("本页数据只保存在你自己的浏览器里，不会上传到任何服务器，也不会与其他人混在一起。\n\n" +
+            "两点注意：\n" +
+            "1) 请勿使用无痕/隐私模式浏览（关闭窗口数据即丢失）；\n" +
+            "2) 换设备、换浏览器、或清理浏览器数据前，请先点「导出」备份，到新设备用「导入」恢复。");
+    }, "关于数据存放位置"));
     bar.appendChild(file);
     document.body.appendChild(bar);
+    firstVisitNotice();
+  }
+  /* 首次访问的提示条：发给多人使用时，避免对方误用无痕模式而丢数据 */
+  function firstVisitNotice() {
+    var FLAG = "mini-apps-blood-v1-noticed";
+    try { if (localStorage.getItem(FLAG)) return; } catch (e) { return; }
+    var box = document.createElement("div");
+    box.style.cssText = "position:fixed;left:8px;right:8px;top:8px;z-index:10000;background:#1b2130;color:#dfe6ef;" +
+      "border:1px solid #2a3040;border-radius:12px;padding:10px 12px;font:13px/1.6 -apple-system,'Microsoft YaHei',sans-serif;" +
+      "box-shadow:0 6px 18px rgba(0,0,0,.45)";
+    box.innerHTML = "<b>数据只保存在你自己的浏览器里</b>，不会上传、也不会与他人混在一起。" +
+      "请勿使用无痕模式；换设备或清理浏览器前，先点右下角「导出」备份。";
+    var ok = document.createElement("button");
+    ok.textContent = "知道了";
+    ok.style.cssText = "margin-left:8px;padding:4px 10px;border-radius:8px;border:1px solid #38415a;background:#252d3f;color:#cfd8e3;cursor:pointer";
+    ok.addEventListener("click", function () {
+      try { localStorage.setItem(FLAG, "1"); } catch (e) {}
+      box.remove();
+    });
+    box.appendChild(ok);
+    document.body.appendChild(box);
   }
   if (document.readyState === "loading") { document.addEventListener("DOMContentLoaded", buildToolbar); }
   else { buildToolbar(); }
