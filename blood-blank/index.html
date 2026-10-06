@@ -875,16 +875,31 @@ main{
 <div class="toast" id="toast" hidden></div>
 
 <script src="../vendor/echarts.min.js" integrity="sha384-pPi0zxBAoDu6+JXW/C68UZLvBUUtU+7zonhif43rqj7pxsGyqyqzcian2Rj37Rss" crossorigin="anonymous"></script>
-<script>/* ==== 本地存储代理（本页由 GitHub Pages 托管时使用）====================
-   原本这些页面依赖 NAS 上的 /api/* 接口；这里改为读写浏览器本地存储，
-   因此每个人打开后录入的数据都保存在自己的浏览器里，互不干扰。
-   右下角额外提供「导出 / 导入」，便于自己备份记录。
-   注：只拦截 /api/ 开头的请求，页面自身逻辑一行未改。            */
+
+<script>/* ==== 本地存储代理（公开版：不连服务器 · 按使用者隔离） ====
+   这些页面原本调用 NAS 上的 /api/*；公开版改为读写浏览器本地存储。
+   同一台设备上可以有多位使用者，各自的数据互不可见。
+   右下角提供「导出 / 导入」备份，以及「换人」切换使用者。             */
 (function () {
-  var KEY = "mini-apps-blood-v1";
+  var BASE_KEY = "mini-apps-blood-v1";
+  var PROF_KEY = "mini-apps-profiles-v1";
   var realFetch = window.fetch ? window.fetch.bind(window) : null;
-  function load() { try { var s = localStorage.getItem(KEY); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
-  function save(db) { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) {} }
+
+  /* ---------- 使用者（本地多用户隔离） ---------- */
+  function readProfiles() {
+    try {
+      var o = JSON.parse(localStorage.getItem(PROF_KEY) || "null");
+      if (!o || !Array.isArray(o.list) || !o.list.length) { o = { current: "默认", list: ["默认"] }; }
+      if (o.list.indexOf(o.current) < 0) { o.current = o.list[0]; }
+      return o;
+    } catch (e) { return { current: "默认", list: ["默认"] }; }
+  }
+  function writeProfiles(o) { try { localStorage.setItem(PROF_KEY, JSON.stringify(o)); } catch (e) {} }
+  function currentUser() { return readProfiles().current; }
+  function dataKey() { return BASE_KEY + "::" + currentUser(); }
+
+  function load() { try { var s = localStorage.getItem(dataKey()); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
+  function save(db) { try { localStorage.setItem(dataKey(), JSON.stringify(db)); } catch (e) {} }
   function db() { var d = load(); if (!d) { d = { records: [] }; save(d); } if (!Array.isArray(d.records)) { d.records = []; } return d; }
   function reply(obj, status) {
     return Promise.resolve(new Response(JSON.stringify(obj),
@@ -931,6 +946,7 @@ main{
             b.place || "", Number(b.points) || 0, b.note || ""];
   }
   function full(d) { return { records: d.records }; }
+  /* ---------- 请求代理 ---------- */
   window.fetch = function (input, init) {
     var url = (typeof input === "string") ? input : ((input && input.url) || "");
     if (url.indexOf("/api/") !== 0) { return realFetch ? realFetch(input, init) : Promise.reject(new Error("fetch unavailable")); }
@@ -951,6 +967,8 @@ main{
     out.ok = true;
     return reply(out);
   };
+
+  /* ---------- 界面 ---------- */
   function toast(msg) {
     var t = document.createElement("div");
     t.textContent = msg;
@@ -964,14 +982,29 @@ main{
     try { if (typeof initData === "function") { initData(); return; } } catch (e) {}
     location.reload();
   }
+  function switchUser(name) {
+    var o = readProfiles();
+    name = (name || "").trim().slice(0, 20);
+    if (!name) return;
+    if (o.list.indexOf(name) < 0) { o.list.push(name); toast("已新建使用者：" + name + "（记录为空）"); }
+    else { toast("已切换到：" + name); }
+    o.current = name;
+    writeProfiles(o);
+    refresh();
+    updateUserLabel();
+  }
+  function updateUserLabel() {
+    var b = document.getElementById("ls-user");
+    if (b) { b.textContent = "使用者：" + currentUser(); b.title = "点击切换 / 新建使用者（数据按使用者隔离）"; }
+  }
   function buildToolbar() {
     if (document.getElementById("ls-tools")) return;
     var bar = document.createElement("div");
     bar.id = "ls-tools";
-    bar.style.cssText = "position:fixed;right:12px;bottom:96px;z-index:9999;display:flex;flex-direction:column;gap:8px";
-    var mk = function (label, fn, title) {
+    bar.style.cssText = "position:fixed;right:12px;bottom:96px;z-index:9999;display:flex;flex-direction:column;gap:8px;align-items:flex-end";
+    var mk = function (label, fn, title, id) {
       var b = document.createElement("button");
-      b.textContent = label; b.title = title || "";
+      b.textContent = label; b.title = title || ""; if (id) b.id = id;
       b.style.cssText = "padding:7px 11px;border-radius:10px;border:1px solid #2a3040;background:#1b2130;" +
         "color:#cfd8e3;font:12px/1 -apple-system,'Microsoft YaHei',sans-serif;cursor:pointer;opacity:.92";
       b.addEventListener("click", fn);
@@ -988,47 +1021,85 @@ main{
           var obj = JSON.parse(fr.result);
           var recs = Array.isArray(obj) ? obj : obj.records;
           if (!Array.isArray(recs)) throw new Error("文件里没有 records 数组");
-          if (!confirm("导入将覆盖当前 " + db().records.length + " 条记录，继续？")) return;
+          if (!confirm("导入将覆盖「" + currentUser() + "」当前的 " + db().records.length + " 条记录，继续？")) return;
           save({ records: recs });
           refresh();
-          toast("已导入 " + recs.length + " 条记录");
+          toast("已导入 " + recs.length + " 条记录到「" + currentUser() + "」");
         } catch (e) { alert("导入失败：" + e.message); }
       };
       fr.readAsText(f, "utf-8");
       file.value = "";
     });
+    bar.appendChild(mk("使用者：" + currentUser(), function () {
+      var o = readProfiles();
+      var name = prompt("换人 / 新建使用者（数据按使用者隔离，互不可见）\n\n已有：" +
+        o.list.join("、") + "\n\n请输入使用者名字：", "");
+      if (name) switchUser(name);
+    }, "点击切换 / 新建使用者（数据按使用者隔离）", "ls-user"));
     bar.appendChild(mk("导出", function () {
       var data = JSON.stringify(db(), null, 2);
       var blob = new Blob([data], { type: "application/json" });
       var a = document.createElement("a");
       var d = new Date(), p = function (n) { return ("0" + n).slice(-2); };
       a.href = URL.createObjectURL(blob);
-      a.download = "blood-records-" + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + ".json";
+      a.download = "blood-" + currentUser() + "-" + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + ".json";
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
-      toast("已导出 " + db().records.length + " 条记录");
-    }, "把记录下载成 JSON 文件备份"));
+      toast("已导出「" + currentUser() + "」的 " + db().records.length + " 条记录");
+    }, "把当前使用者的记录下载成 JSON 备份"));
     bar.appendChild(mk("导入", function () { file.click(); }, "从导出的 JSON 恢复记录"));
     bar.appendChild(mk("说明", function () {
-      alert("本页数据只保存在你自己的浏览器里，不会上传到任何服务器，也不会与其他人混在一起。\n\n" +
-            "两点注意：\n" +
-            "1) 请勿使用无痕/隐私模式浏览（关闭窗口数据即丢失）；\n" +
-            "2) 换设备、换浏览器、或清理浏览器数据前，请先点「导出」备份，到新设备用「导入」恢复。");
-    }, "关于数据存放位置"));
+      alert("数据只保存在你自己的浏览器里，不会上传，也不会与别人混在一起。\n\n" +
+            "· 多人共用一台设备/一个浏览器时，请各自点「使用者」新建一个名字；\n" +
+            "  数据按使用者分开存放，互相看不到。\n" +
+            "· 不要用无痕/隐私模式（关掉窗口数据就没了）。\n" +
+            "· 换设备、换浏览器、清理浏览器数据前，先点「导出」备份，新设备点「导入」恢复。");
+    }, "关于数据存放与隔离"));
     bar.appendChild(file);
     document.body.appendChild(bar);
-    firstVisitNotice();
+    updateUserLabel();
+    maybeAskWho();
   }
-  /* 首次访问的提示条：发给多人使用时，避免对方误用无痕模式而丢数据 */
+  /* 设备上有多位使用者时，先问清是谁，再加载数据 —— 避免误看到别人的记录 */
+  function maybeAskWho() {
+    var o = readProfiles();
+    if (o.list.length < 2 || sessionStorage.getItem("ls-picked") === "1") return;
+    var mask = document.createElement("div");
+    mask.id = "ls-who";
+    mask.style.cssText = "position:fixed;inset:0;z-index:10001;background:rgba(8,10,14,.72);display:flex;" +
+      "align-items:center;justify-content:center;padding:20px";
+    var card = document.createElement("div");
+    card.style.cssText = "background:#171a21;border:1px solid #2a3040;border-radius:14px;padding:16px;max-width:340px;width:100%;" +
+      "color:#e6e8ee;font:14px/1.6 -apple-system,'Microsoft YaHei',sans-serif";
+    card.innerHTML = "<div style='font-size:16px;font-weight:600;margin-bottom:6px'>你是哪位？</div>" +
+      "<div style='color:#9aa3b2;font-size:13px;margin-bottom:12px'>本设备上有多个使用者，各自的记录互不可见。</div>";
+    o.list.forEach(function (name) {
+      var b = document.createElement("button");
+      b.textContent = name;
+      b.style.cssText = "display:block;width:100%;margin:6px 0;padding:10px;border-radius:10px;border:1px solid #2a3040;" +
+        "background:#1b2130;color:#dfe6ef;font-size:14px;cursor:pointer";
+      b.addEventListener("click", function () {
+        var oo = readProfiles(); oo.current = name; writeProfiles(oo);
+        sessionStorage.setItem("ls-picked", "1");
+        mask.remove();
+        refresh();
+        updateUserLabel();
+      });
+      card.appendChild(b);
+    });
+    mask.appendChild(card);
+    document.body.appendChild(mask);
+  }
+  /* 首次访问提示 */
   function firstVisitNotice() {
-    var FLAG = "mini-apps-blood-v1-noticed";
+    var FLAG = BASE_KEY + "-noticed";
     try { if (localStorage.getItem(FLAG)) return; } catch (e) { return; }
     var box = document.createElement("div");
     box.style.cssText = "position:fixed;left:8px;right:8px;top:8px;z-index:10000;background:#1b2130;color:#dfe6ef;" +
       "border:1px solid #2a3040;border-radius:12px;padding:10px 12px;font:13px/1.6 -apple-system,'Microsoft YaHei',sans-serif;" +
       "box-shadow:0 6px 18px rgba(0,0,0,.45)";
-    box.innerHTML = "<b>数据只保存在你自己的浏览器里</b>，不会上传、也不会与他人混在一起。" +
-      "请勿使用无痕模式；换设备或清理浏览器前，先点右下角「导出」备份。";
+    box.innerHTML = "<b>数据只保存在你自己的浏览器里</b>，不上传、也不会与别人混在一起。" +
+      "多人共用一台设备时，请点右下角「使用者」建一个自己的名字。换设备前先「导出」备份。";
     var ok = document.createElement("button");
     ok.textContent = "知道了";
     ok.style.cssText = "margin-left:8px;padding:4px 10px;border-radius:8px;border:1px solid #38415a;background:#252d3f;color:#cfd8e3;cursor:pointer";
@@ -1039,8 +1110,9 @@ main{
     box.appendChild(ok);
     document.body.appendChild(box);
   }
-  if (document.readyState === "loading") { document.addEventListener("DOMContentLoaded", buildToolbar); }
-  else { buildToolbar(); }
+  function boot() { buildToolbar(); firstVisitNotice(); }
+  if (document.readyState === "loading") { document.addEventListener("DOMContentLoaded", boot); }
+  else { boot(); }
   /* ==== 代理结束 ==== */
 })();
 </script>
