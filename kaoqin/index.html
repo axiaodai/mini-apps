@@ -458,6 +458,69 @@ nav a.active svg{transform:translateY(-1px);}
 <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-label="编辑考勤"></div>
 <div id="toast"></div>
 
+<script>/* ==== 本地“云端”代理（公开版：不连任何服务器） ====================
+  原本 /save 与 /userdata 指向 NAS 上的服务；公开版改为读写浏览器本地存储，
+  因此每个人的数据都在自己的浏览器里，互不可见，也不会上传。
+  注：只拦截这两个路径，页面自身逻辑一行未改。                    */
+(function () {
+  var KEY = "kaoqin_local_cloud_v1";
+  var realFetch = window.fetch ? window.fetch.bind(window) : null;
+  function read() { try { var s = localStorage.getItem(KEY); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
+  function write(o) { try { localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) {} }
+  function reply(obj, status) {
+    return Promise.resolve(new Response(JSON.stringify(obj),
+      { status: status || 200, headers: { "Content-Type": "application/json" } }));
+  }
+  function qs(url, name) {
+    var m = new RegExp("[?&]" + name + "=([^&]*)").exec(url);
+    return m ? decodeURIComponent(m[1]) : "";
+  }
+  window.fetch = function (input, init) {
+    var url = (typeof input === "string") ? input : ((input && input.url) || "");
+    var path = url.split("?")[0];
+    if (path !== "/save" && path !== "/userdata") {
+      return realFetch ? realFetch(input, init) : Promise.reject(new Error("fetch unavailable"));
+    }
+    init = init || {};
+    var method = ((init.method || "GET") + "").toUpperCase();
+    if (path === "/userdata" && method === "GET") {
+      var uid = qs(url, "uid");
+      var db = read();
+      if (!db || (db.uid || "") !== uid) { return reply({ ok: false, error: "no data for this uid" }); }
+      return reply({ ok: true, data: db });
+    }
+    if (path === "/save" && method === "POST") {
+      var body = null;
+      try { body = init.body ? JSON.parse(init.body) : null; } catch (e) { return reply({ ok: false, error: "bad json" }, 400); }
+      if (!body || typeof body !== "object") { return reply({ ok: false, error: "empty payload" }, 400); }
+      write(body);
+      return reply({ ok: true, ts: body.ts || null, local: true });
+    }
+    return reply({ ok: false, error: "unsupported" }, 405);
+  };
+  function notice() {
+    var FLAG = "kaoqin_local_notice_v1";
+    try { if (localStorage.getItem(FLAG)) return; } catch (e) { return; }
+    var box = document.createElement("div");
+    box.style.cssText = "position:fixed;left:8px;right:8px;top:8px;z-index:10000;background:#1b2130;color:#dfe6ef;" +
+      "border:1px solid #2a3040;border-radius:12px;padding:10px 12px;font:13px/1.6 -apple-system,'Microsoft YaHei',sans-serif;" +
+      "box-shadow:0 6px 18px rgba(0,0,0,.45)";
+    box.innerHTML = "<b>公开示例版：数据只保存在你自己的浏览器里</b>，不连任何服务器、也不会上传。" +
+      "换设备或清理浏览器数据前，请先用页面里的「备份 / 导出」保存一份。";
+    var ok = document.createElement("button");
+    ok.textContent = "知道了";
+    ok.style.cssText = "margin-left:8px;padding:4px 10px;border-radius:8px;border:1px solid #38415a;background:#252d3f;color:#cfd8e3;cursor:pointer";
+    ok.addEventListener("click", function () {
+      try { localStorage.setItem(FLAG, "1"); } catch (e) {}
+      box.remove();
+    });
+    box.appendChild(ok);
+    document.body.appendChild(box);
+  }
+  if (document.readyState === "loading") { document.addEventListener("DOMContentLoaded", notice); }
+  else { notice(); }
+})();
+</script>
 <script>
 "use strict";
 /* ============================================================
