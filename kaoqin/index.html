@@ -468,8 +468,20 @@ nav a.active svg{transform:translateY(-1px);}
   function read() { try { var s = localStorage.getItem(KEY); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
   function write(o) { try { localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) {} }
   function reply(obj, status) {
-    return Promise.resolve(new Response(JSON.stringify(obj),
-      { status: status || 200, headers: { "Content-Type": "application/json" } }));
+    var bodyText = JSON.stringify(obj), code = status || 200;
+    if (typeof Response === "function") {
+      try {
+        return Promise.resolve(new Response(bodyText,
+          { status: code, headers: { "Content-Type": "application/json" } }));
+      } catch (e) { /* 落到下面的兼容实现 */ }
+    }
+    /* 兼容老内核（部分安卓 WebView / 微信内置浏览器没有 Response） */
+    return Promise.resolve({
+      ok: code >= 200 && code < 300, status: code, statusText: "",
+      headers: { get: function () { return "application/json"; } },
+      json: function () { return Promise.resolve(JSON.parse(bodyText)); },
+      text: function () { return Promise.resolve(bodyText); }
+    });
   }
   function qs(url, name) {
     var m = new RegExp("[?&]" + name + "=([^&]*)").exec(url);
