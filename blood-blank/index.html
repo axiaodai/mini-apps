@@ -1322,66 +1322,92 @@ html, body { max-width: 100%; overflow-x: hidden; }
     b.addEventListener("click", function (e) { e.stopPropagation(); fn(); });
     return b;
   }
-  /* ---- 使用说明（带配色标注的弹窗）---- */
+  /* ---- 使用说明（按页面各写一套，带配色标注）---- */
   function showHelp() {
     var FILL = 'color:#8b6413;font-weight:700';                       /* 需自己填写：琥珀 */
     var KEY  = 'background:#FDF0EE;border:1px solid #F3C9C4;border-radius:10px;padding:9px 10px;color:#8f231c;font-weight:600;margin:6px 0';
     var PRIV = 'background:#FFF6E5;border:1px solid #EBD3A3;border-radius:10px;padding:10px;color:#8b6413;font-weight:700;margin:10px 0';
     var H    = 'font-size:13.5px;font-weight:700;margin:12px 0 4px';
     var LI   = 'margin:4px 0';
-    var hasRedeem = !!document.getElementById('ls-red-table') || !!document.querySelector('[id^="ls-red"]');
-    var hasRemind = !!window.__lsRemind || !!document.getElementById('ls-remind-open');
-    var html = '';
-    html += '<div style="font-size:17px;font-weight:700;margin-bottom:6px">使用说明</div>';
-    html += '<div style="font-size:13px;color:#8b8378;line-height:1.7">' +
-            '这是一个<b>记录 + 统计</b>的小工具：添加你的献血记录，自动算折算次数、积分、奖牌进度与趋势图。' +
-            '<b>数据只存在你这台设备的浏览器里</b>，不上传、没有账号。</div>';
-
-    html += '<div style="' + H + '">一、怎么用（按顺序）</div>';
-    html += '<div style="' + LI + '">1. <b>添加记录</b>：点右下角红色「＋」，填日期、类型、血量、地点</div>';
-    html += '<div style="' + LI + '">2. <b>看统计</b>：底部「总览 / 记录 / 奖牌 / 统计」切换</div>';
-    if (hasRemind) {
-      html += '<div style="' + LI + '">3. <b>献血提醒</b>：左下角 ☰ →「献血提醒」，看今天能不能献、下次什么时候能献</div>';
-    }
-    if (hasRedeem) {
-      html += '<div style="' + LI + '">' + (hasRemind ? '4' : '3') + '. <b>积分兑换</b>：总览页「积分兑换」表格，记你换过什么、还剩多少分</div>';
-    }
-    html += '<div style="' + LI + '">' + ((hasRemind && hasRedeem) ? '5' : (hasRemind || hasRedeem ? '4' : '3')) +
-            '. <b>备份</b>：☰ →「导出备份」下载文件；新设备 ☰ →「导入恢复」</div>';
-    html += '<div style="' + LI + '">' + ((hasRemind && hasRedeem) ? '6' : (hasRemind || hasRedeem ? '5' : '4')) +
-            '. <b>多人共用一台设备</b>：各自点 ☰ →「使用者」建一个自己的名字，数据互不可见</div>';
-
     var isBlood = !!document.getElementById('f-amount');
     var isRun = !!document.getElementById('f-km');
-    html += '<div style="' + H + '">二、<span style="color:#8b6413">需要你自己填写</span>的地方</div>';
-    if (isBlood) {
-      html += '<div style="' + LI + '">· <span style="' + FILL + '">积分</span>：各地标准不同（按血量/次数/治疗量），按当地填写；不清楚就留空</div>';
-      html += '<div style="' + LI + '">· <span style="' + FILL + '">献血量</span>：从下拉里选（全血 100/200/300/400 ml；成分血 1–2 治疗量）</div>';
-      html += '<div style="' + LI + '">· <span style="' + FILL + '">献血地点</span>：省 → 市 → 血站/献血点 三级下拉；名单里没有的选「其他 / 手填」</div>';
-    } else if (isRun) {
-      html += '<div style="' + LI + '">· <span style="' + FILL + '">公里数</span>：填数字（如 5.01），按实际里程</div>';
-      html += '<div style="' + LI + '">· <span style="' + FILL + '">用时</span>：时 / 分 / 秒 三个框，只填有意义的（如 36 分 7 秒 → 分会填 36、秒填 7）</div>';
-      html += '<div style="' + LI + '">· <span style="' + FILL + '">记录类型</span>：日常跑 / 登山·越野 / 赛事活动（按钮选择；选「赛事活动」要填活动名称）</div>';
-      html += '<div style="' + LI + '">· <span style="' + FILL + '">奖牌</span>：有实体奖牌选「实体奖牌」并标「已收到/未收到」；线上赛事选「虚拟奖牌」</div>';
-    }
-    html += '<div style="' + LI + '">· <span style="' + FILL + '">使用者名字</span>：见最后一节隐私提醒</div>';
-    if (hasRemind) {
-      html += '<div style="' + LI + '">· <span style="' + FILL + '">献血提醒的三个间隔天数</span>（成分血↔成分血、全血→成分血、成分血→全血）' +
-              '：各地规定不同，填完点「保存配置」；<b>全血↔全血 182 天是固定的，不用填</b></div>';
-    }
-    if (hasRedeem) {
-      html += '<div style="' + LI + '">· <span style="' + FILL + '">兑换记录</span>：兑换时间、兑换地点、物品名称、积分、领取地点（剩余积分自动算）</div>';
-    }
 
-    html += '<div style="' + H + '">三、特别提醒（重点看）</div>';
-    html += '<div style="' + KEY + '">数据只在本机浏览器：换设备、换浏览器都不会自动同步，需要自己导出／导入</div>';
-    html += '<div style="' + KEY + '">不要用无痕／隐私模式打开：关掉窗口数据就没了（也无法导入恢复）</div>';
-    html += '<div style="' + KEY + '">清理浏览器数据、卸载浏览器之前，先点「导出备份」存一份</div>';
-    html += '<div style="' + KEY + '">「导入恢复」会覆盖当前使用者的记录，导入前请确认使用者是谁</div>';
-    html += '<div style="' + KEY + '">多人共用一台设备：各自点 ☰ →「使用者」建名字，数据按名字隔离，互相看不到</div>';
+    var html = '';
+    html += '<div style="font-size:17px;font-weight:700;margin-bottom:6px">使用说明</div>';
+
+    if (isRun) {
+      /* ================= 跑步页 ================= */
+      html += '<div style="font-size:13px;color:#8b8378;line-height:1.7">' +
+        '<b>这是做什么的：</b>一个跑步/登山/赛事记录小工具。你把每次跑完的<b>公里数和用时</b>记进来，' +
+        '它会自动算出<b>总里程、跑步次数、平均配速、最快/最慢配速、月度与年度趋势、距离分段最好成绩（PB）</b>，' +
+        '并把<b>实体/虚拟奖牌</b>单独整理成奖牌墙。<b>数据只存在你这台设备的浏览器里</b>，不上传、没有账号。</div>';
+
+      html += '<div style="' + H + '">一、怎么用（按顺序）</div>';
+      html += '<div style="' + LI + '">1. <b>添加记录</b>：点右下角红色「＋」→ 填名称、公里数、用时、日期、类型（可选奖牌）→ 保存</div>';
+      html += '<div style="' + LI + '">2. <b>看统计</b>：底部「总览 / 记录 / 奖牌 / 统计」四个标签切换</div>';
+      html += '<div style="' + LI + '">3. <b>总览</b>：总里程、次数、平均配速 + 每月/每年趋势图</div>';
+      html += '<div style="' + LI + '">4. <b>奖牌</b>：实体奖牌（可标已收到/未收到）与虚拟奖牌分开展示</div>';
+      html += '<div style="' + LI + '">5. <b>备份</b>：☰ →「导出备份」下载文件；新设备 ☰ →「导入恢复」</div>';
+      html += '<div style="' + LI + '">6. <b>多人共用一台设备</b>：☰ →「使用者」可新建 / 切换 / 删除，各自数据互不可见</div>';
+
+      html += '<div style="' + H + '">二、每个字段怎么填</div>';
+      html += '<div style="' + LI + '">· <span style="' + FILL + '">名称</span>：写你认得出的名字，例如「晨跑」「奥体 10 公里」「XX 半程马拉松」</div>';
+      html += '<div style="' + LI + '">· <span style="' + FILL + '">公里数</span>：只填数字，按实际里程，例如 <b>5.01</b>、<b>21.10</b>（不要带"公里/km"字样）</div>';
+      html += '<div style="' + LI + '">· <span style="' + FILL + '">用时</span>：时 / 分 / 秒 三个框，只填有意义的。例：36 分 7 秒 → 分填 <b>36</b>、秒填 <b>7</b>；2 小时 5 分 → 时填 <b>2</b>、分填 <b>5</b></div>';
+      html += '<div style="' + LI + '">· <span style="' + FILL + '">日期</span>：点日期框选择（统计按月/按年分组靠它）</div>';
+      html += '<div style="' + LI + '">· <span style="' + FILL + '">记录类型</span>：日常跑 / 登山·越野 / 赛事活动（选「赛事活动」时再填活动名称）</div>';
+      html += '<div style="' + LI + '">· <span style="' + FILL + '">奖牌</span>：有实物选「实体奖牌」并标「已收到 / 未收到」；线上赛事发的选「虚拟奖牌」；没有就留空</div>';
+      html += '<div style="' + LI + '">· <b>备注</b>：可留空，写感受、天气、路线等</div>';
+      html += '<div style="' + LI + '">· <span style="' + FILL + '">使用者名字</span>：见最后一节隐私提醒</div>';
+
+      html += '<div style="' + H + '">三、注意事项（重点）</div>';
+      html += '<div style="' + KEY + '">填好公里数和用时，总里程 / 平均配速 / 趋势图 / PB 都是自动算的，不用另外统计</div>';
+      html += '<div style="' + KEY + '">数据只在本机浏览器：换设备、换浏览器都不会自动同步，需要自己导出／导入</div>';
+      html += '<div style="' + KEY + '">不要用无痕／隐私模式打开：关掉窗口数据就没了（也无法导入恢复）</div>';
+      html += '<div style="' + KEY + '">清理浏览器数据、卸载浏览器之前，先点「导出备份」存一份</div>';
+      html += '<div style="' + KEY + '">「导入恢复」会覆盖当前使用者的记录，导入前请确认使用者是谁</div>';
+      html += '<div style="' + KEY + '">删除使用者（☰ → 使用者 → 删除）会清空他的全部记录，不可恢复</div>';
+    } else {
+      /* ================= 献血页 ================= */
+      html += '<div style="font-size:13px;color:#8b8378;line-height:1.7">' +
+        '<b>这是做什么的：</b>一个无偿献血记录小工具。你把每次献血记进来，' +
+        '它会自动算出<b>累计献血量、献血次数、折算总次数、累计积分、剩余积分</b>，' +
+        '并给出<b>每月/每年献血趋势、献血构成、首末记录、全国无偿献血奉献奖进度（金银铜循环 + 终身荣誉奖）</b>，' +
+        '还带一个<b>献血提醒</b>（按各地间隔算下次可献时间）和一个<b>积分兑换</b>台账。' +
+        '<b>数据只存在你这台设备的浏览器里</b>，不上传、没有账号。</div>';
+
+      html += '<div style="' + H + '">一、怎么用（按顺序）</div>';
+      html += '<div style="' + LI + '">1. <b>添加记录</b>：点右下角红色「＋」→ 填日期、类型（全血/血小板）、血量、献血地点、积分 → 保存</div>';
+      html += '<div style="' + LI + '">2. <b>看统计</b>：底部「总览 / 记录 / 荣誉 / 统计」四个标签切换</div>';
+      html += '<div style="' + LI + '">3. <b>总览</b>：累计献血量、次数、折算次数、积分 + 每月/每年趋势 + 积分兑换表</div>';
+      html += '<div style="' + LI + '">4. <b>荣誉</b>：奉献奖进度（铜/银/金奖每 40 次循环一轮，终身荣誉奖 120 次终身一次）</div>';
+      html += '<div style="' + LI + '">5. <b>献血提醒</b>：左下角 ☰ →「献血提醒」，填好当地间隔后可查今天能不能献、下次什么时候能献</div>';
+      html += '<div style="' + LI + '">6. <b>备份</b>：☰ →「导出备份」下载文件；新设备 ☰ →「导入恢复」</div>';
+      html += '<div style="' + LI + '">7. <b>多人共用一台设备</b>：☰ →「使用者」可新建 / 切换 / 删除，各自数据互不可见</div>';
+
+      html += '<div style="' + H + '">二、每个字段怎么填</div>';
+      html += '<div style="' + LI + '">· <span style="' + FILL + '">类型</span>：全血 / 血小板（成分血），按你实际献的选</div>';
+      html += '<div style="' + LI + '">· <span style="' + FILL + '">血量</span>：从下拉里选——全血 100 / 200 / 300 / 400 ml；血小板 1～2 个治疗量</div>';
+      html += '<div style="' + LI + '">· <span style="' + FILL + '">献血地点</span>：省 → 市 → 血站/献血点 三级下拉；名单里没有的选「其他 / 手填」自己写</div>';
+      html += '<div style="' + LI + '">· <span style="' + FILL + '">积分</span>：各地标准不同（有的按血量、有的按次数、有的按治疗量），按当地规定填；不清楚就留空</div>';
+      html += '<div style="' + LI + '">· <b>折算次数</b>：不用你填，自动算——全血 200 ml = 1 次；血小板 1 个治疗量 = 1 次</div>';
+      html += '<div style="' + LI + '">· <span style="' + FILL + '">兑换记录</span>：兑换时间、兑换地点、物品名称、消耗积分、领取地点（剩余积分自动递减）</div>';
+      html += '<div style="' + LI + '">· <span style="' + FILL + '">献血提醒的三个间隔天数</span>：成分血↔成分血、全血→成分血、成分血→全血——各地规定不同，填完点「保存配置」；<b>全血↔全血 182 天是固定的，不用填</b></div>';
+      html += '<div style="' + LI + '">· <span style="' + FILL + '">使用者名字</span>：见最后一节隐私提醒</div>';
+
+      html += '<div style="' + H + '">三、注意事项（重点）</div>';
+      html += '<div style="' + KEY + '">折算次数、奉献奖进度、剩余积分都是自动算的；只要类型和血量填对就不用管</div>';
+      html += '<div style="' + KEY + '">献血提醒的间隔请按<b>当地血站规定</b>填（各省市不同），填完记得点「保存配置」，下次打开直接点「查询」</div>';
+      html += '<div style="' + KEY + '">数据只在本机浏览器：换设备、换浏览器都不会自动同步，需要自己导出／导入</div>';
+      html += '<div style="' + KEY + '">不要用无痕／隐私模式打开：关掉窗口数据就没了（也无法导入恢复）</div>';
+      html += '<div style="' + KEY + '">清理浏览器数据、卸载浏览器之前，先点「导出备份」存一份</div>';
+      html += '<div style="' + KEY + '">「导入恢复」会覆盖当前使用者的记录，导入前请确认使用者是谁</div>';
+      html += '<div style="' + KEY + '">删除使用者（☰ → 使用者 → 删除）会清空他的全部记录，不可恢复</div>';
+    }
 
     html += '<div style="' + PRIV + '">隐私提醒：使用者名字建议用<b>笔名 / 网名 / 艺名</b>，<b>不要用真实姓名</b>。' +
-            '这个名字会显示在菜单按钮上，别人一眼就能看到；也不是账号，只用于本机区分不同人。</div>';
+            '这个名字会显示在菜单按钮上，别人一眼就能看到；也不是账号，只用于本机区分不同人。' +
+            '本工具所有数据都保存在你自己的浏览器里，不会上传到任何服务器。</div>';
 
     var mask = document.getElementById('ls-help-mask');
     if (!mask) {
