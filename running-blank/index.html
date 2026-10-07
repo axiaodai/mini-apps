@@ -542,6 +542,17 @@ main{
    手机：完全按页面原有样式，不做任何改变。
    平板 / 电脑：加宽内容、重排卡片与图表、弹窗改为居中对话框。 */
 
+/* 小节标题右侧的说明文字：任何宽度、任何字体大小都不裁切
+   （原样式是 flex 不换行，字体偏大时说明文字会撑破容器被裁掉） */
+.section-head { flex-wrap: wrap; gap: 2px 10px; align-items: baseline; }
+.section-head > * { min-width: 0; }
+.section-head .hint, .section-head > span {
+  flex: 1 1 auto; text-align: right; overflow-wrap: anywhere; word-break: break-word; white-space: normal;
+}
+/* 图表标题同理，长标题不裁切 */
+.chart-title { overflow-wrap: anywhere; }
+.chart-note { overflow-wrap: anywhere; }
+
 /* 任何宽度都禁止横向溢出 */
 html, body { max-width: 100%; overflow-x: hidden; }
 #app, main { min-width: 0; }
