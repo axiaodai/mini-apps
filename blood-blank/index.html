@@ -1712,8 +1712,7 @@ function renderOverview(){
     title:{text:String(totalMl.toLocaleString("zh-CN"))+" ml",left:"center",top:"30%",textStyle:{color:"#33231F",fontSize:15,fontWeight:700,fontFamily:"Barlow Condensed"}},
     tooltip:{trigger:"item",confine:true,backgroundColor:"#33231F",borderWidth:0,textStyle:{color:"#fff",fontSize:12},
       formatter:p=>p.name+"　"+p.value.toLocaleString("zh-CN")+" ml（"+(p.value/totalMl*100).toFixed(0)+"%）"},
-    legend:{show:true,bottom:0,left:"center",icon:"circle",itemWidth:8,itemHeight:8,
-      textStyle:{color:"#6B5750",fontSize:11}},
+    legend:{show:false},
     series:[{
       type:"pie",radius:["52%","74%"],center:["50%","42%"],
       label:{show:false},
