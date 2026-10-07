@@ -839,7 +839,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
         <div class="convert-row"><span class="l" id="cv-plt-l"></span><span class="r" id="cv-plt-r"></span></div>
         <div class="convert-row total"><span class="l">合计折算</span><span class="r" id="cv-total-r"></span></div>
       </div>
-      <div class="honor-group-title">距离第二轮金银铜奖 <span class="cnt">金银铜可循环 · 终身仅一次</span></div>
+      <div class="honor-group-title"><span id="r2-title">距离金银铜奖</span> <span class="cnt">金银铜可循环 · 终身仅一次</span></div>
       <div class="round2" id="round2-box"></div>
       <div class="honor-group-title" id="hg-award-title"></div>
       <ul class="award-list" id="award-list"></ul>
@@ -1609,11 +1609,18 @@ function renderRecList(){
 function renderRound2(){
   /* 距离第二轮金银铜奖：第二轮从第40次后重新累计
      第2轮铜=CYCLE+20=60、银=CYCLE+30=70、金=CYCLE+40=80 */
-  const r2 = [
-    { nm:"第二轮铜奖", target:CYCLE + 20 },
-    { nm:"第二轮银奖", target:CYCLE + 30 },
-    { nm:"第二轮金奖", target:CYCLE + 40 }
-  ];
+  const cnNum = n => (n <= 10 ? ["零","一","二","三","四","五","六","七","八","九","十"][n]
+      : (n < 20 ? "十" + ["","一","二","三","四","五","六","七","八","九"][n - 10]
+      : (n < 100 ? ["","","二十","三十","四十","五十","六十","七十","八十","九十"][Math.floor(n / 10)] + (n % 10 ? ["","一","二","三","四","五","六","七","八","九"][n % 10] : "")
+      : String(n))));
+    /* 当前冲刺的轮次：第 1 轮 20/30/40，之后每 CYCLE(40) 次一轮 */
+    const RN = Math.floor(totalTimes / CYCLE) + 1;
+    const RB = (RN - 1) * CYCLE;
+    const r2 = [ { nm:"第" + cnNum(RN) + "轮铜奖", target:RB + 20 },
+                 { nm:"第" + cnNum(RN) + "轮银奖", target:RB + 30 },
+                 { nm:"第" + cnNum(RN) + "轮金奖", target:RB + 40 } ];
+    const r2t = document.getElementById("r2-title");
+    if (r2t) { r2t.textContent = "距离第" + cnNum(RN) + "轮金银铜奖"; }
   $("round2-box").innerHTML = r2.map(o=>{
     const remain = o.target - totalTimes;
     const done = remain <= 0;
