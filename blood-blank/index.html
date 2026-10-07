@@ -1213,6 +1213,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
       "max-height:86vh;overflow-y:auto;color:#e6e8ee;font:14px/1.6 -apple-system,'Microsoft YaHei',sans-serif";
     mask.appendChild(card);
     document.body.appendChild(mask);
+    try { if (window.__lsTools && window.__lsTools.close) { window.__lsTools.close(); } } catch (e) {}
 
     var confirmName = null;
 
