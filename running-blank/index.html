@@ -537,6 +537,62 @@ main{
   text-align:center;
 }
 </style>
+<style id="ls-responsive">
+/* ==== 自适应布局（公开版新增）====================================
+   手机：完全按页面原有样式，不做任何改变。
+   平板 / 电脑：加宽内容、重排卡片与图表、弹窗改为居中对话框。 */
+
+/* 任何宽度都禁止横向溢出 */
+html, body { max-width: 100%; overflow-x: hidden; }
+#app, main { min-width: 0; }
+
+@media (min-width: 700px) {
+  /* 内容居中加宽 */
+  #app { max-width: 760px; }                     /* 关键：原样式把整个应用锁在 480 */
+  main { padding-left: 20px; padding-right: 20px; }
+  .tabbar { max-width: 760px; border-radius: 14px 14px 0 0; }
+  .card { padding: 16px 18px; }
+
+  /* 弹窗：底部抽屉 → 居中对话框（含注入的弹窗，覆盖内联样式） */
+  .modal-mask, #ls-help-mask, #ls-remind-mask, #ls-red-mask, #ls-who {
+    align-items: center !important;
+    padding: 20px;
+  }
+  .modal {
+    max-width: 560px !important;
+    border-radius: 18px !important;
+    max-height: 86vh !important;
+    padding-bottom: 18px !important;
+    box-shadow: 0 18px 50px rgba(30, 15, 12, .28);
+  }
+  #ls-who > div { max-width: 420px !important; }
+}
+
+@media (min-width: 1000px) {
+  #app { max-width: 1180px; }
+  main { padding-left: 24px; padding-right: 24px; padding-bottom: 104px; }
+  .tabbar { max-width: 560px; border-radius: 16px 16px 0 0; }
+  .kpi-grid { grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .card { padding: 18px 20px; }
+  .chart-box { height: 260px; }
+
+  /* 总览页两栏网格：默认整行，两张趋势图并排 */
+  #view-overview { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; align-items: start; }
+  #view-overview > * { grid-column: 1 / -1; min-width: 0; }
+  #ls-month-section { grid-column: auto; }
+  #view-overview > .section:has(#year-chart) { grid-column: auto; }
+
+  /* 记录 / 奖牌 / 统计页也用宽屏卡片，表格更宽松 */
+  #view-stats .detail-table, #ls-red-table { font-size: 13px; }
+  .rec-list { max-width: 100%; }
+}
+
+/* 触摸设备不受影响：指针悬停效果只加在鼠标设备上 */
+@media (hover: hover) and (min-width: 1000px) {
+  .card { transition: box-shadow .15s ease; }
+  .card:hover { box-shadow: 0 6px 20px rgba(30, 15, 12, .07); }
+}
+</style>
 </head>
 <body>
 <div id="app">
