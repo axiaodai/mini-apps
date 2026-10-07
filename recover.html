@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>数据找回 · 无偿献血 / 跑步记录</title>
+<style>
+  :root { --ink:#221a17; --ink2:#5c4f49; --ink3:#8b8079; --line:#e8e0d9; --card:#fff;
+          --bg:#F7F3EF; --red:#B3261E; --green:#14694A; --amber:#8b6413; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font:14px/1.6 -apple-system,BlinkMacSystemFont,"Microsoft YaHei",sans-serif; }
+  .wrap { max-width:760px; margin:0 auto; padding:16px 14px 60px; }
+  h1 { font-size:20px; margin:6px 0 4px; }
+  .sub { color:var(--ink3); font-size:12.5px; margin-bottom:14px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px; margin-bottom:14px; }
+  .k { font-size:13px; font-weight:700; margin-bottom:6px; }
+  .warn { background:#FDF0EE; border:1px solid #F3C9C4; color:#8f231c; border-radius:12px; padding:10px 12px; font-size:13px; margin-bottom:12px; }
+  .ok { background:#EAF6F0; border:1px solid #BFE3D2; color:#0f5136; border-radius:12px; padding:10px 12px; font-size:13px; margin-bottom:12px; }
+  .amber { background:#FFF6E5; border:1px solid #EBD3A3; color:var(--amber); border-radius:12px; padding:10px 12px; font-size:13px; margin-bottom:12px; }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  th, td { text-align:left; padding:7px 6px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--ink3); font-weight:600; white-space:nowrap; }
+  code { font-size:12px; background:#F3EEE9; padding:1px 5px; border-radius:5px; word-break:break-all; }
+  button { font:inherit; padding:8px 11px; border-radius:10px; border:1px solid var(--line);
+           background:#fff; color:var(--ink); cursor:pointer; margin:2px 4px 2px 0; white-space:nowrap; }
+  button.pri { background:var(--red); border-color:var(--red); color:#fff; font-weight:700; }
+  button.gr { background:var(--green); border-color:var(--green); color:#fff; font-weight:700; }
+  button.ghost { background:transparent; }
+  .muted { color:var(--ink3); font-size:12px; }
+  .toast { position:fixed; left:50%; bottom:26px; transform:translateX(-50%); background:#2b3446; color:#fff;
+           padding:10px 16px; border-radius:20px; font-size:13px; opacity:0; transition:opacity .25s; pointer-events:none; z-index:9; }
+  .toast.on { opacity:1; }
+  ol li { margin:4px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>数据找回</h1>
+  <div class="sub">只读检查本浏览器里保存的献血 / 跑步记录，可一键切回或合并。<b>本页不会删除任何数据。</b></div>
+
+  <div id="verdict"></div>
+
+  <div class="card">
+    <div class="k">① 使用者（谁的数据在哪个名字下）</div>
+    <div id="profiles" class="muted">读取中…</div>
+    <div style="margin-top:8px">
+      <button class="ghost" id="reload">重新检查</button>
+      <button class="ghost" id="exportAll">导出全部数据（保底备份）</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="k">② 浏览器里找到的所有记录</div>
+    <div id="found" class="muted">检查中…</div>
+  </div>
+
+  <div class="card">
+    <div class="k">③ 找不到时怎么办</div>
+    <ol class="muted" style="padding-left:18px;margin:6px 0">
+      <li>确认你打开的是<b>同一个网址</b>：数据是按"网址"分开存的。局域网地址（如 <code>http://192.168.x.x:…</code>）和
+          <code>https://axiaodai.github.io/…</code> 是<b>两套独立数据</b>——请在想找的那个网址下打开本页。</li>
+      <li>确认<b>使用者</b>选对了：在页面里点 ☰ →「使用者」，把每个名字都点一遍看看（每个人数据互相独立）。</li>
+      <li>如果你<b>导出过备份</b>（json 文件）：可以在页面里 ☰ →「导入恢复」把它还原回来。</li>
+      <li>如果只是在浏览器里<b>换了页面</b>（没清数据、没卸载浏览器）：数据一般还在，用上面的清单就能看到。</li>
+      <li><b>不要</b>清理浏览器数据 / 卸载浏览器 / 用无痕模式，那才会真的丢。</li>
+    </ol>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  var APP = [
+    { key: "mini-apps-blood-v1",    name: "献血记录",  mode: "records" },
+    { key: "mini-apps-running-v1",  name: "跑步记录",  mode: "records" },
+    { key: "mini-apps-blood-redeem-v1", name: "兑换记录", mode: "array" },
+    { key: "mini-apps-blood-intervals-v1", name: "献血提醒间隔", mode: "object" }
+  ];
+  var PROF = "mini-apps-profiles-v1";
+
+  function $(id) { return document.getElementById(id); }
+  function toast(msg) {
+    var t = $("toast"); t.textContent = msg; t.classList.add("on");
+    setTimeout(function () { t.classList.remove("on"); }, 2200);
+  }
+  function readProfiles() {
+    try {
+      var o = JSON.parse(localStorage.getItem(PROF) || "null");
+      if (!o || !Array.isArray(o.list) || !o.list.length) { return { current: "默认", list: ["默认"] }; }
+      if (o.list.indexOf(o.current) < 0) { o.current = o.list[0]; }
+      return o;
+    } catch (e) { return { current: "默认", list: ["默认"] }; }
+  }
+  function writeProfiles(o) { try { localStorage.setItem(PROF, JSON.stringify(o)); } catch (e) {} }
+  function parse(raw) { try { return JSON.parse(raw); } catch (e) { return null; } }
+  function countOf(key) {
+    var raw = localStorage.getItem(key);
+    if (raw == null) { return null; }
+    var o = parse(raw);
+    if (Array.isArray(o)) { return { n: o.length, kind: "数组", bytes: raw.length }; }
+    if (o && Array.isArray(o.records)) { return { n: o.records.length, kind: "记录集", bytes: raw.length }; }
+    if (o && typeof o === "object") { return { n: null, kind: "配置", bytes: raw.length }; }
+    return { n: null, kind: "其他", bytes: raw.length };
+  }
+
+  /* 收集所有 mini-apps-* 键 */
+  function allKeys() {
+    var out = [];
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k && k.indexOf("mini-apps-") === 0) { out.push(k); }
+    }
+    return out.sort();
+  }
+
+  function splitKey(k) {
+    var i = k.indexOf("::");
+    return i < 0 ? { base: k, user: "" } : { base: k.slice(0, i), user: k.slice(i + 2) };
+  }
+
+  function render() {
+    var p = readProfiles();
+    var keys = allKeys();
+    var hasData = false;
+
+    /* ① 使用者 */
+    var ph = [];
+    ph.push('<div>当前使用者：<b>' + esc(p.current) + '</b></div>');
+    ph.push('<div style="margin-top:6px">全部使用者：' + p.list.map(function (n) {
+      var tot = 0;
+      APP.forEach(function (a) {
+        var c = countOf(a.key + "::" + n);
+        if (c && c.n) { tot += c.n; }
+      });
+      return '<span style="display:inline-block;margin:3px 6px 3px 0;padding:4px 9px;border:1px solid var(--line);border-radius:20px">' +
+             esc(n) + ' <span class="muted">' + tot + ' 条</span></span>';
+    }).join('') + '</div>');
+    $("profiles").innerHTML = ph.join('');
+
+    /* ② 记录清单 */
+    var rows = [];
+    keys.forEach(function (k) {
+      var sp = splitKey(k), info = countOf(k);
+      if (!info) { return; }
+      var app = APP.filter(function (a) { return a.key === sp.base; })[0];
+      var label = app ? app.name : sp.base.replace("mini-apps-", "");
+      if (app && app.mode === "records" && info.n) { hasData = true; }
+      var ops = [];
+      /* 有使用者后缀：可切换；只要是记录集（含旧版无后缀的老数据）：可合并 */
+      if (sp.user) { ops.push('<button data-set="' + attr(sp.user) + '">切到这个使用者</button>'); }
+      if (app && (app.mode === "records" || app.mode === "array") && info.n) {
+        ops.push('<button class="gr" data-merge="' + attr(k) + '">' +
+                 (sp.user ? '合并到当前使用者' : '把这份旧数据合并到当前使用者') + '</button>');
+      }
+      rows.push('<tr><td><div><b>' + esc(label) + '</b>' + (sp.user ? ' <span class="muted">使用者 ' + esc(sp.user) + '</span>' : ' <span class="muted">(无使用者后缀·旧数据)</span>') + '</div>' +
+                '<div class="muted"><code>' + esc(k) + '</code></div></td>' +
+                '<td style="white-space:nowrap">' + (info.n === null ? info.kind : (info.n + ' 条')) +
+                '<div class="muted">' + Math.round(info.bytes / 1024 * 10) / 10 + ' KB</div></td>' +
+                '<td>' + (ops.join('') || '<span class="muted">—</span>') + '</td></tr>');
+    });
+
+    $("found").innerHTML = rows.length
+      ? '<table><thead><tr><th>位置</th><th>数量</th><th>操作</th></tr></thead><tbody>' + rows.join('') + '</tbody></table>'
+      : '<div class="muted">这个网址下没有任何 mini-apps 数据。</div>';
+
+    /* 结论条 */
+    var cur = p.current;
+    var curTotal = 0;
+    APP.forEach(function (a) { var c = countOf(a.key + "::" + cur); if (c && c.n) { curTotal += c.n; } });
+    var other = [];
+    keys.forEach(function (k) {
+      var sp = splitKey(k), c = countOf(k);
+      if (!c || !c.n || !sp.user || sp.user === cur) { return; }
+      if (APP.some(function (a) { return a.key === sp.base && a.mode === "records"; })) { other.push(sp.user + "（" + c.n + " 条）"); }
+    });
+    var v = $("verdict");
+    if (curTotal > 0) {
+      v.innerHTML = '<div class="ok"><b>找到了：当前使用者「' + esc(cur) + '」有 ' + curTotal + ' 条记录。</b>' +
+        (other.length ? '另外这些使用者名下也有数据：' + esc(other.join('、')) + '，可点下面的「切到这个使用者」查看。' : '') +
+        '</div>';
+    } else if (other.length) {
+      v.innerHTML = '<div class="warn"><b>当前使用者「' + esc(cur) + '」没有记录，但别的使用者名下有：' + esc(other.join('、')) + '。</b>' +
+        '<div style="margin-top:6px">多半就是你换了使用者 —— 点下面的「切到这个使用者」，然后回到页面看记录。</div></div>';
+    } else if (hasData) {
+      v.innerHTML = '<div class="amber">这个网址下能看到数据（见下方清单），但当前使用者名下没有记录。点「切到这个使用者」即可。</div>';
+    } else {
+      v.innerHTML = '<div class="warn"><b>这个网址下没有找到任何献血/跑步记录。</b>' +
+        '<div style="margin-top:6px">说明你当时是在<b>另一个网址</b>下记录的（数据按网址分开存）。' +
+        '请在第 ③ 步列出的那个网址下打开本页：把本页地址里的域名换成你记录时用的那个即可（例如换成局域网地址）。</div></div>';
+    }
+  }
+
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+  function attr(s) { return esc(s).replace(/"/g, "&quot;"); }
+
+  function switchTo(name) {
+    var p = readProfiles();
+    if (p.list.indexOf(name) < 0) { p.list.push(name); }
+    p.current = name;
+    writeProfiles(p);
+    try { sessionStorage.removeItem("ls-picked"); } catch (e) {}
+    toast("已切到使用者：" + name + "　现在回页面看记录");
+    render();
+  }
+
+  function mergeInto(key) {
+    var p = readProfiles(), cur = p.current;
+    var sp = splitKey(key);
+    var src = parse(localStorage.getItem(key));
+    var srcRecs = Array.isArray(src) ? src : (src && Array.isArray(src.records) ? src.records : null);
+    if (!srcRecs) { toast("这条不是记录集，无法合并"); return; }
+    /* 目标键：一律写到「当前使用者」名下同一个数据集 */
+    var dstKey = sp.base + "::" + cur;
+    var dst = parse(localStorage.getItem(dstKey));
+    var dstArr;
+    if (Array.isArray(dst)) { dstArr = dst.slice(); }
+    else if (dst && Array.isArray(dst.records)) { dstArr = dst.records.slice(); }
+    else { dstArr = []; }
+    var seen = {};
+    dstArr.forEach(function (r) { seen[JSON.stringify(r)] = 1; });
+    var added = 0;
+    srcRecs.forEach(function (r) { var s = JSON.stringify(r); if (!seen[s]) { seen[s] = 1; dstArr.push(r); added++; } });
+    try {
+      if (Array.isArray(parse(localStorage.getItem(dstKey))) && dstKey.indexOf("redeem") >= 0) {
+        localStorage.setItem(dstKey, JSON.stringify(dstArr));
+      } else {
+        var cur0 = parse(localStorage.getItem(dstKey));
+        var obj = (cur0 && !Array.isArray(cur0) && typeof cur0 === "object") ? cur0 : {};
+        obj.records = dstArr;
+        localStorage.setItem(dstKey, JSON.stringify(obj));
+      }
+    } catch (e) { toast("写入失败：" + (e && e.message ? e.message : "存储不可写")); return; }
+    toast("已合并 " + added + " 条到「" + cur + "」（原来的数据没动）");
+    render();
+  }
+
+  document.addEventListener("click", function (e) {
+    var t = e.target;
+    if (!t || t.tagName !== "BUTTON") { return; }
+    if (t.id === "reload") { render(); toast("已重新检查"); return; }
+    if (t.id === "exportAll") { exportAll(); return; }
+    var s = t.getAttribute("data-set"), m = t.getAttribute("data-merge");
+    if (s) { switchTo(s); return; }
+    if (m) { mergeInto(m); return; }
+  });
+
+  function exportAll() {
+    var dump = {};
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k && k.indexOf("mini-apps-") === 0) { dump[k] = parse(localStorage.getItem(k)); }
+    }
+    var blob = new Blob([JSON.stringify({ 导出时间: new Date().toISOString(), 数据: dump }, null, 2)], { type: "application/json" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "mini-apps-全部数据-" + new Date().toISOString().slice(0, 10) + ".json";
+    document.body.appendChild(a); a.click(); a.remove();
+    toast("已导出全部数据");
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>
