@@ -829,7 +829,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
       <div class="view-title">无偿献血荣誉</div>
       <div class="view-sub">全国无偿献血奉献奖进度 · 按折算次数累计</div>
       <div class="honor-hero">
-        <div class="big" id="hh-total">47.5<small>次</small></div>
+        <div class="big" id="hh-total">0<small>次</small></div>
         <div class="sub" id="hh-sub"></div>
         <div class="counts" id="hh-counts"></div>
       </div>
@@ -2722,6 +2722,52 @@ $("confirm-ok").addEventListener("click", async ()=>{
 
   window.__lsRemind = { evaluate: evaluate, render: render, syncInputs: syncInputs, open: openModal,
                         close: closeModal, defaults: DEFAULTS, wholeWhole: WHOLE_WHOLE };
+})();
+</script>
+<script>
+/* ==== 修复：荣誉页/奖牌墙的大数字（公开版新增）====================
+   页面自己的 renderHonor()/renderMedals() 会更新明细，却漏了最上面的大数字，
+   导致它一直显示 HTML 里写死的旧值。这里渲染后把大数字同步为明细里的合计。 */
+(function () {
+  var MARK = 'ls-sync-big';
+  function syncBig() {
+    /* 荣誉页（献血）：大数字 = 折算明细「合计折算」 */
+    var hh = document.getElementById('hh-total');
+    if (hh) {
+      var cv = document.getElementById('cv-total-r');
+      var v = cv ? (cv.textContent || '').replace(/[^0-9.]/g, '') : '';
+      if (v !== '') { hh.innerHTML = v + '<small>次</small>'; }
+    }
+    /* 奖牌墙（跑步）：大数字 = 实体 + 虚拟 */
+    var mh = document.getElementById('mh-total');
+    if (mh) {
+      var chips = document.querySelectorAll('#mh-counts .mh-chip b');
+      if (chips.length >= 2) {
+        var p = parseInt(chips[0].textContent, 10) || 0;
+        var v2 = parseInt(chips[1].textContent, 10) || 0;
+        mh.innerHTML = (p + v2) + '<small>枚</small>';
+      }
+    }
+  }
+  function wrap(fn) {
+    if (typeof window[fn] !== 'function' || window[fn].__lsBigWrapped) { return; }
+    var orig = window[fn];
+    var w = function () {
+      var r = orig.apply(this, arguments);
+      try { syncBig(); } catch (e) {}
+      return r;
+    };
+    w.__lsBigWrapped = true;
+    window[fn] = w;
+  }
+  function boot() {
+    ['renderHonor', 'renderMedals', 'renderOverview', 'renderStats'].forEach(wrap);
+    syncBig();
+    setTimeout(syncBig, 400);   /* 首屏数据可能稍后才渲染完 */
+    setTimeout(syncBig, 1500);
+  }
+  if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', boot); } else { boot(); }
+  window.__lsSyncBig = syncBig;
 })();
 </script>
 </body>
