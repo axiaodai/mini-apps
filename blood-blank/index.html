@@ -2185,16 +2185,17 @@ $("confirm-ok").addEventListener("click", async ()=>{
       '<div style="overflow-x:auto;margin-top:10px">' +
       '  <table id="ls-red-table" style="width:100%;border-collapse:collapse;font-size:12px;min-width:620px">' +
       '    <thead><tr>' +
+      '      <th style="width:58px;border-bottom:1px solid var(--line)"></th>' +
       '      <th style="text-align:left;padding:7px 6px;border-bottom:1px solid var(--line);white-space:nowrap">兑换时间</th>' +
       '      <th style="text-align:left;padding:7px 6px;border-bottom:1px solid var(--line);white-space:nowrap">兑换地点</th>' +
       '      <th style="text-align:left;padding:7px 6px;border-bottom:1px solid var(--line);white-space:nowrap">兑换物品名称</th>' +
       '      <th style="text-align:right;padding:7px 6px;border-bottom:1px solid var(--line);white-space:nowrap">兑换物品积分</th>' +
       '      <th style="text-align:left;padding:7px 6px;border-bottom:1px solid var(--line);white-space:nowrap">领取兑换物品地点</th>' +
       '      <th style="text-align:right;padding:7px 6px;border-bottom:1px solid var(--line);white-space:nowrap">兑换完后剩余积分</th>' +
-      '      <th style="border-bottom:1px solid var(--line)"></th>' +
       '    </tr></thead><tbody id="ls-red-body"></tbody>' +
       '  </table>' +
       '</div>' +
+      '<div style="font-size:11.5px;color:var(--ink3);margin-top:6px">误添加了？点每行最左侧的「删除」，按钮变红后再点一次「确认删除」即可。</div>' +
       '<div id="ls-red-empty" style="font-size:12px;color:var(--ink3);margin-top:8px">还没有兑换记录。点右上角「＋ 添加兑换」。</div>';
     host.appendChild(card);
 
@@ -2324,13 +2325,29 @@ $("confirm-ok").addEventListener("click", async ()=>{
       render();
     });
 
+    /* 删除：按钮已由界面做两段式确认（变红 → 再点一次），这里不再弹 confirm */
     function del(i) {
       var arr = loadRed();
       if (!arr[i]) { return; }
-      if (!confirm('确定删除这条兑换记录吗？\n' + arr[i][2] + ' · ' + arr[i][3] + ' 分')) { return; }
+      var name = arr[i][2] + ' · ' + arr[i][3] + ' 分';
       arr.splice(i, 1);
-      saveRed(arr);
+      if (!saveRed(arr)) { alert('删除失败：存储写入失败（可能是无痕模式）'); }
       render();
+      toastR('已删除兑换记录：' + name);
+    }
+
+    /* 轻提示（不打断操作） */
+    function toastR(msg) {
+      try {
+        var t = document.createElement('div');
+        t.textContent = msg;
+        t.style.cssText = 'position:fixed;left:50%;bottom:150px;transform:translateX(-50%);z-index:150;' +
+          'background:#2b3446;color:#e6e8ee;padding:9px 14px;border-radius:20px;font-size:12.5px;' +
+          'box-shadow:0 6px 18px rgba(0,0,0,.25);pointer-events:none;transition:opacity .3s';
+        document.body.appendChild(t);
+        setTimeout(function () { t.style.opacity = '0'; }, 1600);
+        setTimeout(function () { if (t.parentNode) { t.parentNode.removeChild(t); } }, 2000);
+      } catch (e) {}
     }
 
     function render() {
@@ -2343,6 +2360,11 @@ $("confirm-ok").addEventListener("click", async ()=>{
         used += cost;
         var left = earned - used;
         html += '<tr>' +
+          /* 删除按钮放在每行最左侧：手机上不用横向滚动就能看到（原先在最右列，要滑到底） */
+          '<td style="padding:8px 6px;border-bottom:1px solid var(--line)">' +
+          '<button class="ls-red-del" data-del="' + o.i + '" title="删除这条兑换记录" ' +
+          'style="background:none;border:1px solid var(--line);border-radius:8px;padding:2px 7px;' +
+          'color:var(--red);cursor:pointer;font-size:12px;line-height:1.6;white-space:nowrap">删除</button></td>' +
           '<td style="padding:8px 6px;border-bottom:1px solid var(--line);white-space:nowrap">' + esc(r[0]) + '</td>' +
           '<td style="padding:8px 6px;border-bottom:1px solid var(--line)">' + esc(r[1]) + '</td>' +
           '<td style="padding:8px 6px;border-bottom:1px solid var(--line)">' + esc(r[2]) + '</td>' +
@@ -2350,13 +2372,30 @@ $("confirm-ok").addEventListener("click", async ()=>{
           '<td style="padding:8px 6px;border-bottom:1px solid var(--line)">' + esc(r[4]) + '</td>' +
           '<td style="padding:8px 6px;border-bottom:1px solid var(--line);text-align:right;font-variant-numeric:tabular-nums;font-weight:600;color:' +
           (left < 0 ? 'var(--red)' : 'var(--ink)') + '">' + left + ' 分</td>' +
-          '<td style="padding:8px 6px;border-bottom:1px solid var(--line);text-align:right">' +
-          '<button data-del="' + o.i + '" style="background:none;border:none;color:var(--ink3);cursor:pointer;font-size:15px">✕</button></td>' +
           '</tr>';
       });
       body.innerHTML = html;
       Array.prototype.forEach.call(body.querySelectorAll('[data-del]'), function (b) {
-        b.addEventListener('click', function () { del(Number(b.getAttribute('data-del'))); });
+        b.addEventListener('click', function () {
+          if (b.getAttribute('data-armed') === '1') {           /* 第二下：真正删除 */
+            del(Number(b.getAttribute('data-del')));
+            return;
+          }
+          /* 第一下：变成红色「确认删除」，3 秒内没有第二下就自动复原（防误触） */
+          b.setAttribute('data-armed', '1');
+          b.textContent = '确认删除';
+          b.style.background = 'var(--red)';
+          b.style.borderColor = 'var(--red)';
+          b.style.color = '#fff';
+          clearTimeout(b.__lsT);
+          b.__lsT = setTimeout(function () {
+            b.setAttribute('data-armed', '');
+            b.textContent = '删除';
+            b.style.background = 'none';
+            b.style.borderColor = 'var(--line)';
+            b.style.color = 'var(--ink3)';
+          }, 3000);
+        });
       });
       document.getElementById('ls-red-empty').style.display = rows.length ? 'none' : '';
       var left = earned - used;
