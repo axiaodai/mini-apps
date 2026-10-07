@@ -702,6 +702,17 @@ main{
         </div>
       </div>
 
+            <div class="section" id="ls-month-section">
+        <div class="section-head">
+          <h2>每月献血趋势</h2>
+          <span class="hint">单位：折算 ml（血小板1治疗量=200ml）</span>
+        </div>
+        <div class="card">
+          <div class="chart-title">每月献血量（折算）与次数</div>
+          <div class="chart-box" id="ls-month-chart"></div>
+          <div class="chart-note" id="ls-month-note"></div>
+        </div>
+      </div>
       <div class="section">
         <div class="section-head">
           <h2>献血构成</h2>
@@ -2195,6 +2206,113 @@ $("confirm-ok").addEventListener("click", async ()=>{
       if (t && t.id === 'ls-user') { setTimeout(render, 50); }
     });
   });
+})();
+</script>
+<script>
+/* ==== 每月献血趋势图（公开版新增）==============================
+   柱子＝当月折算 ml（全血按 ml、血小板 1 治疗量按 200ml），折线＝当月献血次数。
+   数据随页面重算汇总时自动刷新，不修改页面自身代码。            */
+(function () {
+  var PKEY = 'mini-apps-profiles-v1';
+  var REC = 'mini-apps-blood-v1';
+
+  function user() { try { return (JSON.parse(localStorage.getItem(PKEY) || '{}').current) || '默认'; } catch (e) { return '默认'; } }
+  function recs() { try { return JSON.parse(localStorage.getItem(REC + '::' + user()) || '{}').records || []; } catch (e) { return []; } }
+
+  function monthly() {
+    var m = {};
+    recs().forEach(function (r) {
+      if (!r || !r[0]) { return; }
+      var k = String(r[0]).slice(0, 7);
+      if (k.length !== 7) { return; }
+      var amt = Number(r[2]) || 0;
+      var ml = (r[1] === '全血') ? amt : amt * 200;      /* 与页面折算口径一致 */
+      var o = m[k] || (m[k] = { ml: 0, count: 0, times: 0 });
+      o.ml += ml; o.count++; o.times += (Number(r[3]) || 0);
+    });
+    return Object.keys(m).sort().map(function (k) {
+      return { month: k, ml: Math.round(m[k].ml), count: m[k].count, times: Math.round(m[k].times * 100) / 100 };
+    });
+  }
+
+  function label(mk) { var p = mk.split('-'); return p[0].slice(2) + '年' + Number(p[1]) + '月'; }
+
+  function render() {
+    var host = document.getElementById('ls-month-chart');
+    var note = document.getElementById('ls-month-note');
+    if (!host) { return; }
+    var data = monthly();
+    window.__lsMonth = { data: data };
+    if (typeof echarts === 'undefined') { if (note) { note.textContent = '图表库未加载'; } return; }
+    var chart = window.__lsMonthChart;
+    if (!chart) { chart = window.__lsMonthChart = echarts.init(host); }
+    if (!data.length) {
+      chart.clear();
+      if (note) { note.textContent = '暂无记录：点右下角「＋」添加第一条，图表会在有数据后显示'; }
+      return;
+    }
+    var ml = data.map(function (d) { return d.ml; });
+    var cnt = data.map(function (d) { return d.count; });
+    var total = ml.reduce(function (a, b) { return a + b; }, 0);
+    var max = Math.max.apply(null, ml);
+    var idx = ml.indexOf(max);
+    chart.setOption({
+      color: ['#B3261E', '#C9962E'],
+      grid: { left: 46, right: 34, top: 18, bottom: 30 },
+      tooltip: {
+        trigger: 'axis', confine: true, backgroundColor: '#33231F', borderWidth: 0,
+        textStyle: { color: '#fff', fontSize: 12 },
+        formatter: function (p) {
+          var i = p[0].dataIndex;
+          return label(data[i].month) + '<br>' + data[i].ml.toLocaleString('zh-CN') + ' ml（折算） · ' +
+                 data[i].count + ' 次 · 折算 ' + data[i].times + ' 次';
+        }
+      },
+      legend: { show: true, top: -2, right: 0, icon: 'roundRect', itemWidth: 10, itemHeight: 10,
+                textStyle: { color: '#6B5750', fontSize: 11 } },
+      xAxis: {
+        type: 'category', data: data.map(function (d) { return label(d.month); }),
+        axisLine: { lineStyle: { color: '#EDE4DB' } }, axisTick: { show: false },
+        axisLabel: { color: '#6B5750', fontSize: 10, fontFamily: 'Noto Sans SC',
+                     interval: data.length > 8 ? 'auto' : 0, rotate: data.length > 8 ? 40 : 0 }
+      },
+      yAxis: [
+        { type: 'value', name: 'ml', nameTextStyle: { color: '#98837B', fontSize: 10 },
+          axisLabel: { color: '#98837B', fontSize: 10, fontFamily: 'Barlow Condensed' },
+          splitLine: { lineStyle: { color: '#F3ECE5' } } },
+        { type: 'value', name: '次', nameTextStyle: { color: '#98837B', fontSize: 10 },
+          axisLabel: { color: '#98837B', fontSize: 10, fontFamily: 'Barlow Condensed' },
+          splitLine: { show: false } }
+      ],
+      series: [
+        { name: '折算 ml', type: 'bar', data: ml, barMaxWidth: 34,
+          itemStyle: { borderRadius: [5, 5, 0, 0] },
+          label: { show: true, position: 'top', color: '#B3261E', fontSize: 10, fontFamily: 'Barlow Condensed',
+                   formatter: function (p) { return p.value ? p.value : ''; } } },
+        { name: '次数', type: 'line', yAxisIndex: 1, data: cnt, smooth: true, symbolSize: 6,
+          lineStyle: { width: 2 }, itemStyle: { color: '#C9962E' } }
+      ]
+    }, true);
+    if (note) {
+      note.textContent = data[idx].month.replace('-', '年') + '月献血量最高（' + max.toLocaleString('zh-CN') +
+        ' ml，' + data[idx].count + ' 次），占累计 ' + (total ? (max / total * 100).toFixed(0) : 0) + '%';
+    }
+  }
+
+  /* 页面重算汇总后同步刷新 */
+  ['renderStats', 'renderOverview'].forEach(function (fn) {
+    if (typeof window[fn] === 'function' && !window[fn].__lsMonthWrapped) {
+      var orig = window[fn];
+      var wrapped = function () { var r = orig.apply(this, arguments); try { render(); } catch (e) {} return r; };
+      wrapped.__lsMonthWrapped = true;
+      window[fn] = wrapped;
+    }
+  });
+  window.addEventListener('resize', function () {
+    try { if (window.__lsMonthChart) { window.__lsMonthChart.resize(); } } catch (e) {}
+  });
+  function boot() { render(); }
+  if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', boot); } else { boot(); }
 })();
 </script>
 </body>
