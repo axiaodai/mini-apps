@@ -816,7 +816,11 @@ html, body { max-width: 100%; overflow-x: hidden; }
         </div>
       </div>
     </div>
-    <div class="modal-foot">
+    <div>
+        <label class="f-label">备注（可选）</label>
+        <input class="f-input" id="f-note" maxlength="60" placeholder="如：奥体夜跑 · 有风 / 状态不错">
+      </div>
+      <div class="modal-foot">
       <button type="button" class="btn-ghost" id="add-cancel">取消</button>
       <button type="button" class="btn-primary" id="add-submit">保存记录</button>
     </div>
@@ -916,7 +920,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
   function toRecord(b) {
     var km = Number(b.km) || 0, secs = Number(b.secs) || 0;
     return [b.name || "", Math.round(km * 100) / 100, b.dur || "", b.date || "",
-            b.medal || "", b.received || "", secs, pace(secs, km)];
+            b.medal || "", b.received || "", secs, pace(secs, km), String(b.note || "").slice(0, 60)];
   }
   function full(d) { var a = aggRunning(d.records); return { records: d.records, monthly: a.monthly, weekly: a.weekly }; }
   /* ---------- 请求代理 ---------- */
@@ -1154,7 +1158,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
         '并把<b>实体/虚拟奖牌</b>单独整理成奖牌墙。<b>数据只存在你这台设备的浏览器里</b>，不上传、没有账号。</div>';
 
       html += '<div style="' + H + '">一、怎么用（按顺序）</div>';
-      html += '<div style="' + LI + '">1. <b>添加记录</b>：点右下角红色「＋」→ 填名称、公里数、用时、日期、类型（可选奖牌）→ 保存</div>';
+      html += '<div style="' + LI + '">1. <b>添加记录</b>：点右下角红色「＋」→ 填名称、公里数、用时、日期、类型、奖牌（可选）、备注（可选）→ 保存</div>';
       html += '<div style="' + LI + '">2. <b>看统计</b>：底部「总览 / 记录 / 奖牌 / 统计」四个标签切换</div>';
       html += '<div style="' + LI + '">3. <b>总览</b>：总里程、次数、平均配速 + 每月/每年趋势图</div>';
       html += '<div style="' + LI + '">4. <b>奖牌</b>：实体奖牌（可标已收到/未收到）与虚拟奖牌分开展示</div>';
@@ -1569,6 +1573,7 @@ function renderRecList(){
     return '<li class="rec">'+coin+
       '<div class="rec-main"><div class="rec-name">'+r[0]+'</div>'+
       '<div class="rec-meta">'+fmtDate(r[3])+' · '+r[1].toFixed(2)+' km · '+r[2]+'</div>'+
+          (r[8] ? '<div class="rec-note" style="font-size:11.5px;color:var(--ink2);margin-top:3px;word-break:break-all">' + String(r[8]).replace(/[<>&]/g, '') + '</div>' : '') +
       medalBadge(r)+
       '<div class="rec-ops">'+
         '<button type="button" class="rec-op edit" data-edit="'+idx+'">编辑</button>'+
@@ -1719,7 +1724,7 @@ function openAdd(){
   $("f-name").value = "";
   $("f-date").value = new Date().toISOString().slice(0,10);
   $("f-km").value = "";
-  $("f-h").value = 0; $("f-m").value = 0; $("f-s").value = 0;
+  $("f-h").value = 0; $("f-m").value = 0; $("f-s").value = 0; $("f-note").value = "";
   $("add-title").textContent = "添加跑步记录";
   $("add-submit").textContent = "保存记录";
   $("add-mask").hidden = false;
@@ -1741,7 +1746,7 @@ function openEdit(idx){
   const secs = r[6];
   $("f-h").value = Math.floor(secs/3600);
   $("f-m").value = Math.floor(secs%3600/60);
-  $("f-s").value = secs%60;
+  $("f-s").value = secs%60; $("f-note").value = r[8] || "";
   $("add-title").textContent = "编辑跑步记录";
   $("add-submit").textContent = "保存修改";
   $("add-mask").hidden = false;
@@ -1780,7 +1785,8 @@ async function submitAdd(){
   const payload = {
     name, km: Math.round(km*100)/100, date, secs, dur,
     medal: ADD.medal,
-    received: ADD.medal === "p" ? ADD.recv : ""
+    received: ADD.medal === "p" ? ADD.recv : "",
+    note: ($("f-note") ? ($("f-note").value || "").trim().slice(0, 60) : "")
   };
   const isEdit = EDIT_IDX !== null;
   const url = isEdit ? "/api/records?index="+EDIT_IDX : "/api/records";
