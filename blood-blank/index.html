@@ -2011,9 +2011,8 @@ $("confirm-ok").addEventListener("click", async ()=>{
       '  <input class="f-input" id="ls-red-place" placeholder="其他地点（手填）" maxlength="60" style="display:none">' +
       '  <label class="f-label">兑换物品名称</label><input class="f-input" id="ls-red-item" placeholder="如：保温杯" maxlength="60">' +
       '  <label class="f-label">兑换物品积分</label><input class="f-input" type="number" id="ls-red-cost" min="1" step="1" placeholder="如：50">' +
-      '  <label class="f-label">领取兑换物品地点（先选省，再选市，最后选血站 / 献血点）</label>' +
-      '  <div id="ls-red-pickup-wrap"></div>' +
-      '  <input class="f-input" id="ls-red-pickup" placeholder="其他地点（手填）" maxlength="60" style="display:none">' +
+      '  <label class="f-label">领取兑换物品地点</label>' +
+      '  <input class="f-input" id="ls-red-pickup" placeholder="如：血站一楼服务台" maxlength="60">' +
       '  <div id="ls-red-hint" style="font-size:12px;color:var(--ink3);margin-top:6px"></div>' +
       '  <div style="display:flex;gap:10px;margin-top:16px">' +
       '    <button id="ls-red-cancel" style="flex:1;padding:12px;border-radius:12px;border:1px solid var(--line);background:#fff;cursor:pointer">取消</button>' +
@@ -2073,8 +2072,7 @@ $("confirm-ok").addEventListener("click", async ()=>{
         wrap.__picker = api;
         return api;
       }
-      makePicker('ls-red-place-wrap', 'ls-red-place', 'ls-red');
-      makePicker('ls-red-pickup-wrap', 'ls-red-pickup', 'ls-red-pick');
+      makePicker('ls-red-place-wrap', 'ls-red-place', 'ls-red');   /* 仅兑换地点使用三级下拉 */
     })();
 
     function refreshHint() {
@@ -2089,10 +2087,8 @@ $("confirm-ok").addEventListener("click", async ()=>{
     function openModal() {
       document.getElementById('ls-red-date').value = new Date().toISOString().slice(0, 10);
       ['place', 'item', 'cost', 'pickup'].forEach(function (k) { document.getElementById('ls-red-' + k).value = ''; });
-      ['ls-red-place-wrap', 'ls-red-pickup-wrap'].forEach(function (id) {
-        var w = document.getElementById(id);
-        if (w && w.__picker) { w.__picker.reset(); }
-      });
+      var w0 = document.getElementById('ls-red-place-wrap');
+      if (w0 && w0.__picker) { w0.__picker.reset(); }
       refreshHint();
       mask.hidden = false;
       mask.style.display = 'flex';   /* 内联 display 会覆盖 hidden，必须显式开关 */
@@ -2114,7 +2110,7 @@ $("confirm-ok").addEventListener("click", async ()=>{
       var place = valOf('ls-red-place-wrap', 'ls-red-place');
       var item = document.getElementById('ls-red-item').value.trim();
       var cost = parseFloat(document.getElementById('ls-red-cost').value);
-      var pickup = valOf('ls-red-pickup-wrap', 'ls-red-pickup');
+      var pickup = document.getElementById('ls-red-pickup').value.trim();
       if (!date) { alert('请选择兑换时间'); return; }
       if (!item) { alert('请填写兑换物品名称'); return; }
       if (!isFinite(cost) || cost <= 0) { alert('请填写兑换物品积分'); return; }
