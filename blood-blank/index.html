@@ -1088,6 +1088,90 @@ main{
     b.addEventListener("click", function (e) { e.stopPropagation(); fn(); });
     return b;
   }
+  /* ---- 使用说明（带配色标注的弹窗）---- */
+  function showHelp() {
+    var FILL = 'color:#8b6413;font-weight:700';                       /* 需自己填写：琥珀 */
+    var KEY  = 'background:#FDF0EE;border:1px solid #F3C9C4;border-radius:10px;padding:9px 10px;color:#8f231c;font-weight:600;margin:6px 0';
+    var PRIV = 'background:#FFF6E5;border:1px solid #EBD3A3;border-radius:10px;padding:10px;color:#8b6413;font-weight:700;margin:10px 0';
+    var H    = 'font-size:13.5px;font-weight:700;margin:12px 0 4px';
+    var LI   = 'margin:4px 0';
+    var hasRedeem = !!document.getElementById('ls-red-table') || !!document.querySelector('[id^="ls-red"]');
+    var hasRemind = !!window.__lsRemind || !!document.getElementById('ls-remind-open');
+    var html = '';
+    html += '<div style="font-size:17px;font-weight:700;margin-bottom:6px">使用说明</div>';
+    html += '<div style="font-size:13px;color:#8b8378;line-height:1.7">' +
+            '这是一个<b>记录 + 统计</b>的小工具：添加你的献血记录，自动算折算次数、积分、奖牌进度与趋势图。' +
+            '<b>数据只存在你这台设备的浏览器里</b>，不上传、没有账号。</div>';
+
+    html += '<div style="' + H + '">一、怎么用（按顺序）</div>';
+    html += '<div style="' + LI + '">1. <b>添加记录</b>：点右下角红色「＋」，填日期、类型、血量、地点</div>';
+    html += '<div style="' + LI + '">2. <b>看统计</b>：底部「总览 / 记录 / 奖牌 / 统计」切换</div>';
+    if (hasRemind) {
+      html += '<div style="' + LI + '">3. <b>献血提醒</b>：左下角 ☰ →「献血提醒」，看今天能不能献、下次什么时候能献</div>';
+    }
+    if (hasRedeem) {
+      html += '<div style="' + LI + '">' + (hasRemind ? '4' : '3') + '. <b>积分兑换</b>：总览页「积分兑换」表格，记你换过什么、还剩多少分</div>';
+    }
+    html += '<div style="' + LI + '">' + ((hasRemind && hasRedeem) ? '5' : (hasRemind || hasRedeem ? '4' : '3')) +
+            '. <b>备份</b>：☰ →「导出备份」下载文件；新设备 ☰ →「导入恢复」</div>';
+    html += '<div style="' + LI + '">' + ((hasRemind && hasRedeem) ? '6' : (hasRemind || hasRedeem ? '5' : '4')) +
+            '. <b>多人共用一台设备</b>：各自点 ☰ →「使用者」建一个自己的名字，数据互不可见</div>';
+
+    var isBlood = !!document.getElementById('f-amount');
+    var isRun = !!document.getElementById('f-km');
+    html += '<div style="' + H + '">二、<span style="color:#8b6413">需要你自己填写</span>的地方</div>';
+    if (isBlood) {
+      html += '<div style="' + LI + '">· <span style="' + FILL + '">积分</span>：各地标准不同（按血量/次数/治疗量），按当地填写；不清楚就留空</div>';
+      html += '<div style="' + LI + '">· <span style="' + FILL + '">献血量</span>：从下拉里选（全血 100/200/300/400 ml；成分血 1–2 治疗量）</div>';
+      html += '<div style="' + LI + '">· <span style="' + FILL + '">献血地点</span>：省 → 市 → 血站/献血点 三级下拉；名单里没有的选「其他 / 手填」</div>';
+    } else if (isRun) {
+      html += '<div style="' + LI + '">· <span style="' + FILL + '">公里数</span>：填数字（如 5.01），按实际里程</div>';
+      html += '<div style="' + LI + '">· <span style="' + FILL + '">用时</span>：时 / 分 / 秒 三个框，只填有意义的（如 36 分 7 秒 → 分会填 36、秒填 7）</div>';
+      html += '<div style="' + LI + '">· <span style="' + FILL + '">记录类型</span>：日常跑 / 登山·越野 / 赛事活动（按钮选择；选「赛事活动」要填活动名称）</div>';
+      html += '<div style="' + LI + '">· <span style="' + FILL + '">奖牌</span>：有实体奖牌选「实体奖牌」并标「已收到/未收到」；线上赛事选「虚拟奖牌」</div>';
+    }
+    html += '<div style="' + LI + '">· <span style="' + FILL + '">使用者名字</span>：见最后一节隐私提醒</div>';
+    if (hasRemind) {
+      html += '<div style="' + LI + '">· <span style="' + FILL + '">献血提醒的三个间隔天数</span>（成分血↔成分血、全血→成分血、成分血→全血）' +
+              '：各地规定不同，填完点「保存配置」；<b>全血↔全血 182 天是固定的，不用填</b></div>';
+    }
+    if (hasRedeem) {
+      html += '<div style="' + LI + '">· <span style="' + FILL + '">兑换记录</span>：兑换时间、兑换地点、物品名称、积分、领取地点（剩余积分自动算）</div>';
+    }
+
+    html += '<div style="' + H + '">三、特别提醒（重点看）</div>';
+    html += '<div style="' + KEY + '">数据只在本机浏览器：换设备、换浏览器都不会自动同步，需要自己导出／导入</div>';
+    html += '<div style="' + KEY + '">不要用无痕／隐私模式打开：关掉窗口数据就没了（也无法导入恢复）</div>';
+    html += '<div style="' + KEY + '">清理浏览器数据、卸载浏览器之前，先点「导出备份」存一份</div>';
+    html += '<div style="' + KEY + '">「导入恢复」会覆盖当前使用者的记录，导入前请确认使用者是谁</div>';
+    html += '<div style="' + KEY + '">多人共用一台设备：各自点 ☰ →「使用者」建名字，数据按名字隔离，互相看不到</div>';
+
+    html += '<div style="' + PRIV + '">隐私提醒：使用者名字建议用<b>笔名 / 网名 / 艺名</b>，<b>不要用真实姓名</b>。' +
+            '这个名字会显示在菜单按钮上，别人一眼就能看到；也不是账号，只用于本机区分不同人。</div>';
+
+    var mask = document.getElementById('ls-help-mask');
+    if (!mask) {
+      mask = document.createElement('div');
+      mask.id = 'ls-help-mask';
+      mask.style.cssText = 'position:fixed;inset:0;z-index:140;background:rgba(30,15,12,.5);display:none;align-items:flex-end;justify-content:center';
+      var card = document.createElement('div');
+      card.className = 'modal';
+      card.style.cssText = 'background:#fff;width:100%;max-width:480px;border-radius:18px 18px 0 0;padding:18px;max-height:88vh;overflow-y:auto';
+      card.innerHTML =
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">' +
+        '<div style="font-size:15px;font-weight:700">☰ 使用说明</div>' +
+        '<button id="ls-help-x" style="background:none;border:none;font-size:24px;color:var(--ink3);cursor:pointer">×</button></div>' +
+        '<div id="ls-help-body" style="font-size:13px;line-height:1.75;white-space:normal"></div>';
+      mask.appendChild(card);
+      document.body.appendChild(mask);
+      mask.addEventListener('click', function (e) { if (e.target === mask) { mask.style.display = 'none'; } });
+      card.querySelector('#ls-help-x').addEventListener('click', function () { mask.style.display = 'none'; });
+    }
+    document.getElementById('ls-help-body').innerHTML = html;
+    mask.style.display = 'flex';
+    try { if (window.__lsTools && window.__lsTools.close) { window.__lsTools.close(); } } catch (e) {}
+  }
+
   function buildToolbar() {
     if (document.getElementById("ls-tools")) return;
     /* z-index 70 < 页面弹层 100：填写数据时本浮层会被自动盖住 */
@@ -1161,13 +1245,7 @@ main{
       toast("已导出「" + currentUser() + "」的 " + db().records.length + " 条记录");
     }, "ls-export"));
     panel.appendChild(btn("导入恢复", function () { file.click(); }, "ls-import"));
-    panel.appendChild(btn("使用说明", function () {
-      alert("数据只保存在你自己的浏览器里，不会上传，也不会与别人混在一起。\n\n" +
-            "· 多人共用一台设备/一个浏览器时，请各自点「使用者」新建一个名字；\n" +
-            "  数据按使用者分开存放，互相看不到。\n" +
-            "· 不要用无痕/隐私模式（关掉窗口数据就没了）。\n" +
-            "· 换设备、换浏览器、清理浏览器数据前，先点「导出备份」，新设备点「导入恢复」。");
-    }, "ls-help"));
+    panel.appendChild(btn("使用说明", function () { showHelp(); }, "ls-help"));
     wrap.appendChild(toggle);
     wrap.appendChild(panel);
     wrap.appendChild(file);
