@@ -1002,14 +1002,31 @@ main{
     return "mini-apps-blood-redeem-v1::" + u;
   }
   function extraExport() {
+    var out = {};
     try {
       var v = JSON.parse(localStorage.getItem(redeemKey()) || "null");
-      return v && v.length ? { redeem: v } : {};
-    } catch (e) { return {}; }
+      if (v && v.length) { out.redeem = v; }
+    } catch (e) {}
+    try {
+      var u = "默认";
+      try { u = (JSON.parse(localStorage.getItem("mini-apps-profiles-v1") || "{}").current) || "默认"; } catch (e2) {}
+      var itv = JSON.parse(localStorage.getItem("mini-apps-blood-intervals-v1::" + u) || "null");
+      if (itv && typeof itv === "object") { out.intervals = itv; }   /* 献血提醒的间隔配置 */
+    } catch (e) {}
+    return out;
   }
   function extraImport(obj) {
-    if (!obj || !Array.isArray(obj.redeem)) { return; }
-    try { localStorage.setItem(redeemKey(), JSON.stringify(obj.redeem)); } catch (e) {}
+    if (!obj) { return; }
+    if (Array.isArray(obj.redeem)) {
+      try { localStorage.setItem(redeemKey(), JSON.stringify(obj.redeem)); } catch (e) {}
+    }
+    if (obj.intervals && typeof obj.intervals === "object") {
+      try {
+        var u = "默认";
+        try { u = (JSON.parse(localStorage.getItem("mini-apps-profiles-v1") || "{}").current) || "默认"; } catch (e2) {}
+        localStorage.setItem("mini-apps-blood-intervals-v1::" + u, JSON.stringify(obj.intervals));
+      } catch (e) {}
+    }
   }
   /* ---------- 请求代理 ---------- */
   window.fetch = function (input, init) {
@@ -2316,37 +2333,43 @@ $("confirm-ok").addEventListener("click", async ()=>{
 </script>
 <script>
 /* ==== 献血提醒（公开版新增）====================================
-   全血↔全血 固定 6 个月；成分血↔成分血、成分血→全血、全血→成分血 的间隔天数
-   由使用者按当地规定填写。点「查询」输出四种提示之一。          */
+   间隔默认：全血↔全血 182 天（固定）、成分血↔成分血 14 天、
+             全血→成分血 90 天、成分血→全血 28 天。
+   改动后点「保存配置」即记住（本机、按使用者隔离），下次打开自动带出。 */
 (function () {
-  var SECTTPL = "      <div class=\"section\" id=\"ls-reminder-section\">\n        <div class=\"section-head\">\n          <h2>献血提醒</h2>\n          <span class=\"hint\">全血间隔 6 个月；成分血间隔按当地规定填写</span>\n        </div>\n        <div class=\"card\">\n          <div class=\"f-grid2\">\n            <div>\n              <label class=\"f-label\">成分血 → 成分血（天）</label>\n              <input class=\"f-input\" type=\"number\" id=\"ls-itv-plt-plt\" min=\"1\" step=\"1\" placeholder=\"按当地规定填写\">\n            </div>\n            <div>\n              <label class=\"f-label\">成分血 → 全血（天）</label>\n              <input class=\"f-input\" type=\"number\" id=\"ls-itv-plt-whole\" min=\"1\" step=\"1\" placeholder=\"按当地规定填写\">\n            </div>\n          </div>\n          <div style=\"margin-top:10px\">\n            <label class=\"f-label\">全血 → 成分血（天）</label>\n            <input class=\"f-input\" type=\"number\" id=\"ls-itv-whole-plt\" min=\"1\" step=\"1\" placeholder=\"按当地规定填写\">\n          </div>\n          <div class=\"chart-note\" style=\"margin-top:8px\">\n            说明：全血与全血间隔按 6 个月计算；其余间隔各地规定不同，请按当地标准填写后点「查询」。\n            填写内容只保存在本机浏览器。\n          </div>\n          <div style=\"display:flex;gap:10px;margin-top:12px\">\n            <button id=\"ls-remind-query\" style=\"flex:1;padding:12px;border-radius:12px;border:none;background:#B3261E;color:#fff;font-weight:600;cursor:pointer\">查询</button>\n            <button id=\"ls-remind-clear\" style=\"padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:#fff;cursor:pointer\">清除填写</button>\n          </div>\n          <div id=\"ls-remind-result\" style=\"margin-top:12px;font-size:13.5px;line-height:1.7;\n               border:1px solid var(--line);border-radius:12px;padding:12px;background:#FDF7F5\">点「查询」查看今天是否可以献血。</div>\n          <div id=\"ls-remind-basis\" class=\"chart-note\" style=\"margin-top:6px\"></div>\n        </div>\n      </div>\n";
+  var SECTTPL = "      <div class=\"section\" id=\"ls-reminder-section\">\n        <div class=\"section-head\">\n          <h2>献血提醒</h2>\n          <span class=\"hint\">间隔按各地规定填写，保存后下次打开自动带出</span>\n        </div>\n        <div class=\"card\">\n          <div class=\"f-grid2\">\n            <div>\n              <label class=\"f-label\">全血 → 全血（天，固定）</label>\n              <input class=\"f-input\" id=\"ls-itv-whole-whole\" value=\"182\" readonly style=\"background:#F6F1EC;color:#8b8378\">\n            </div>\n            <div>\n              <label class=\"f-label\">成分血 → 成分血（天）</label>\n              <input class=\"f-input\" type=\"number\" id=\"ls-itv-plt-plt\" min=\"1\" step=\"1\" placeholder=\"默认 14\">\n            </div>\n          </div>\n          <div class=\"f-grid2\" style=\"margin-top:10px\">\n            <div>\n              <label class=\"f-label\">全血 → 成分血（天）</label>\n              <input class=\"f-input\" type=\"number\" id=\"ls-itv-whole-plt\" min=\"1\" step=\"1\" placeholder=\"默认 90\">\n            </div>\n            <div>\n              <label class=\"f-label\">成分血 → 全血（天）</label>\n              <input class=\"f-input\" type=\"number\" id=\"ls-itv-plt-whole\" min=\"1\" step=\"1\" placeholder=\"默认 28\">\n            </div>\n          </div>\n          <div class=\"chart-note\" style=\"margin-top:8px\">\n            默认：全血→全血 182 天（半年，固定）· 成分血→成分血 14 天 · 全血→成分血 90 天 · 成分血→全血 28 天。\n            改动后点「保存配置」，下次打开自动带出，直接点「查询」即可。配置只存本机浏览器。\n          </div>\n          <div style=\"display:flex;gap:8px;margin-top:12px;flex-wrap:wrap\">\n            <button id=\"ls-remind-query\" style=\"flex:1 1 40%;padding:12px;border-radius:12px;border:none;background:#B3261E;color:#fff;font-weight:600;cursor:pointer\">查询</button>\n            <button id=\"ls-remind-save\" style=\"flex:1 1 40%;padding:12px;border-radius:12px;border:none;background:#C9962E;color:#fff;font-weight:600;cursor:pointer\">保存配置</button>\n            <button id=\"ls-remind-reset\" style=\"flex:1 1 100%;padding:10px;border-radius:12px;border:1px solid var(--line);background:#fff;cursor:pointer\">恢复默认</button>\n          </div>\n          <div id=\"ls-remind-result\" style=\"margin-top:12px;font-size:13.5px;line-height:1.7;\n               border:1px solid var(--line);border-radius:12px;padding:12px;background:#FDF7F5\">点「查询」查看今天是否可以献血。</div>\n          <div id=\"ls-remind-basis\" class=\"chart-note\" style=\"margin-top:6px\"></div>\n        </div>\n      </div>\n";
   var PKEY = 'mini-apps-profiles-v1';
   var REC = 'mini-apps-blood-v1';
   var ITV = 'mini-apps-blood-intervals-v1';
-  var DOSE = 'mini-apps-blood-remind-dose-v1';
+
+  var WHOLE_WHOLE = 182;                       /* 固定不可改 */
+  var DEFAULTS = { pltPlt: 14, wholePlt: 90, pltWhole: 28 };
 
   function user() { try { return (JSON.parse(localStorage.getItem(PKEY) || '{}').current) || '默认'; } catch (e) { return '默认'; } }
   function recs() { try { return JSON.parse(localStorage.getItem(REC + '::' + user()) || '{}').records || []; } catch (e) { return []; } }
-  function loadItv() { try { return JSON.parse(localStorage.getItem(ITV + '::' + user()) || '{}') || {}; } catch (e) { return {}; } }
-  function saveItv(o) { try { localStorage.setItem(ITV + '::' + user(), JSON.stringify(o)); } catch (e) {} }
+  function itvKey() { return ITV + '::' + user(); }
+  function loadItv() {
+    var o = null;
+    try { o = JSON.parse(localStorage.getItem(itvKey()) || 'null'); } catch (e) { o = null; }
+    if (!o || typeof o !== 'object') { o = {}; saveItv(o, true); }   /* 首次打开：写入默认 */
+    return o;
+  }
+  function saveItv(o, silent) {
+    try { localStorage.setItem(itvKey(), JSON.stringify(o)); } catch (e) { return false; }
+    return true;
+  }
+  function val(key) {
+    var o = loadItv(), v = Number(o[key]);
+    return (isFinite(v) && v > 0) ? v : DEFAULTS[key];
+  }
 
-  /* ---- 日期工具（只按年月日，避免时区误差）---- */
-  function today() { var d = new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  /* ---- 日期工具 ---- */
   function pad(n) { return ('0' + n).slice(-2); }
+  function today() { var d = new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
   function parse(s) { var p = String(s || '').split('-'); return (p.length === 3) ? new Date(+p[0], +p[1] - 1, +p[2]) : null; }
   function fmt(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
   function addDays(s, n) { var d = parse(s); if (!d) { return ''; } d.setDate(d.getDate() + Number(n)); return fmt(d); }
-  function addMonths(s, n) {
-    var d = parse(s); if (!d) { return ''; }
-    var day = d.getDate(); d.setDate(1); d.setMonth(d.getMonth() + n);
-    var last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-    d.setDate(Math.min(day, last)); return fmt(d);
-  }
-  function daysFromToday(target) {
-    var t = parse(today()), x = parse(target);
-    if (!x) { return null; }
-    return Math.round((x - t) / 86400000);
-  }
+  function fromToday(target) { var t = parse(today()), x = parse(target); return x ? Math.round((x - t) / 86400000) : null; }
   function later(a, b) { if (!a) { return b; } if (!b) { return a; } return (a > b) ? a : b; }
 
   function lastOf(type) {
@@ -2361,61 +2384,38 @@ $("confirm-ok").addEventListener("click", async ()=>{
 
   function evaluate() {
     var itv = loadItv();
-    var num = function (v) { var n = Number(v); return (isFinite(n) && n > 0) ? n : null; };
-    var pltPlt = num(itv.pltPlt), pltWhole = num(itv.pltWhole), wholePlt = num(itv.wholePlt);
+    var num = function (key) { var v = Number(itv[key]); return (isFinite(v) && v > 0) ? v : DEFAULTS[key]; };
+    var pltPlt = num('pltPlt'), wholePlt = num('wholePlt'), pltWhole = num('pltWhole');
+    var lastWhole = lastOf('全血'), lastPlt = lastOf('血小板');
+    var missing = [];
 
-    var lastWhole = lastOf('全血');
-    var lastPlt = lastOf('血小板');
-    var missing = [], notes = [];
+    var wholeAt = lastWhole ? addDays(lastWhole, WHOLE_WHOLE) : '';
+    if (lastPlt) { wholeAt = later(wholeAt, addDays(lastPlt, pltWhole)); }
 
-    /* 可捐献全血的最早日期：max(上次全血+6个月, 上次成分血+成分血→全血间隔) */
-    var wholeAt = lastWhole ? addMonths(lastWhole, 6) : '';
-    if (lastPlt) {
-      if (pltWhole) { wholeAt = later(wholeAt, addDays(lastPlt, pltWhole)); }
-      else { missing.push('成分血 → 全血'); }
-    }
-    /* 可捐献成分血的最早日期：max(上次成分血+成分血间隔, 上次全血+全血→成分血间隔) */
-    var pltAt = '';
-    if (lastPlt) {
-      if (pltPlt) { pltAt = addDays(lastPlt, pltPlt); }
-      else { missing.push('成分血 → 成分血'); }
-    }
-    if (lastWhole) {
-      if (wholePlt) { pltAt = later(pltAt, addDays(lastWhole, wholePlt)); }
-      else { missing.push('全血 → 成分血'); }
-    }
+    var pltAt = lastPlt ? addDays(lastPlt, pltPlt) : '';
+    if (lastWhole) { pltAt = later(pltAt, addDays(lastWhole, wholePlt)); }
 
-    return { lastWhole: lastWhole, lastPlt: lastPlt, wholeAt: wholeAt, pltAt: pltAt, missing: missing, itv: itv };
+    return { lastWhole: lastWhole, lastPlt: lastPlt, wholeAt: wholeAt, pltAt: pltAt,
+             missing: missing, itv: { wholeWhole: WHOLE_WHOLE, pltPlt: pltPlt, wholePlt: wholePlt, pltWhole: pltWhole } };
   }
 
   function render() {
     var el = document.getElementById('ls-remind-result');
     var basis = document.getElementById('ls-remind-basis');
     if (!el) { return; }
-    var e = evaluate(), todayS = today();
-    var lines = [];
-    var dWhole = e.wholeAt ? daysFromToday(e.wholeAt) : null;
-    var dPlt = e.pltAt ? daysFromToday(e.pltAt) : null;
-
-    var basisTxt = [];
-    basisTxt.push('今天：' + todayS);
-    basisTxt.push(e.lastWhole ? ('最近一次全血 ' + e.lastWhole + (e.wholeAt ? ' → 可献全血 ' + e.wholeAt : '')) : '无全血记录');
-    basisTxt.push(e.lastPlt ? ('最近一次成分血 ' + e.lastPlt + (e.pltAt ? ' → 可献成分血 ' + e.pltAt : '')) : '无成分血记录');
+    var e = evaluate();
+    var dWhole = e.wholeAt ? fromToday(e.wholeAt) : null;
+    var dPlt = e.pltAt ? fromToday(e.pltAt) : null;
+    var bt = ['今天：' + today()];
+    bt.push(e.lastWhole ? ('最近一次全血 ' + e.lastWhole + (e.wholeAt ? ' → 可献全血 ' + e.wholeAt : '')) : '无全血记录');
+    bt.push(e.lastPlt ? ('最近一次成分血 ' + e.lastPlt + (e.pltAt ? ' → 可献成分血 ' + e.pltAt : '')) : '无成分血记录');
+    bt.push('间隔：全血↔全血 ' + WHOLE_WHOLE + ' 天 · 成分血↔成分血 ' + e.itv.pltPlt + ' 天 · 全血→成分血 ' + e.itv.wholePlt + ' 天 · 成分血→全血 ' + e.itv.pltWhole + ' 天');
 
     if (!e.lastWhole && !e.lastPlt) {
       el.innerHTML = '还没有献血记录：请先添加记录，再来查询。';
-      basis.textContent = basisTxt.join(' · ');
+      basis.textContent = bt.join(' · ');
       return;
     }
-    if (e.missing.length) {
-      el.innerHTML = '<b>请先填写间隔天数：</b>' + e.missing.join('、') +
-        '（各地规定不同，按当地标准填写）<br>填好后点「查询」。' +
-        (e.wholeAt ? '<br>· 参考：仅按 6 个月规则，全血最早可献 ' + e.wholeAt : '') +
-        (e.pltAt ? '<br>· 参考：成分血最早可献 ' + e.pltAt : '');
-      basis.textContent = basisTxt.join(' · ');
-      return;
-    }
-
     var dueWhole = (dWhole !== null && dWhole <= 0);
     var duePlt = (dPlt !== null && dPlt <= 0);
     var msg;
@@ -2429,54 +2429,96 @@ $("confirm-ok").addEventListener("click", async ()=>{
       msg = '您可以在 ' + dPlt + ' 天后（' + e.pltAt + '）捐献成分血，' + dWhole + ' 天之后（' + e.wholeAt + '）捐献全血';
     }
     el.innerHTML = '<b style="font-size:14.5px">' + msg + '</b>';
-    basis.textContent = basisTxt.join(' · ');
+    basis.textContent = bt.join(' · ');
   }
 
+  var FIELDS = {
+    'plt-plt': 'pltPlt',
+    'whole-plt': 'wholePlt',
+    'plt-whole': 'pltWhole'
+  };
+
   function syncInputs() {
-    var itv = loadItv();
-    ['pltPlt', 'pltWhole', 'wholePlt'].forEach(function (k) {
-      var el = document.getElementById('ls-itv-' + (k === 'pltPlt' ? 'plt-plt' : (k === 'pltWhole' ? 'plt-whole' : 'whole-plt')));
-      if (el) { el.value = (itv[k] == null) ? '' : itv[k]; }
+    var o = loadItv();
+    Object.keys(FIELDS).forEach(function (id) {
+      var el = document.getElementById('ls-itv-' + id);
+      if (!el) { return; }
+      var key = FIELDS[id], v = Number(o[key]);
+      el.value = (isFinite(v) && v > 0) ? v : DEFAULTS[key];
     });
+    var w = document.getElementById('ls-itv-whole-whole');
+    if (w) { w.value = WHOLE_WHOLE; }
   }
+
+  function collected() {
+    var o = {};
+    Object.keys(FIELDS).forEach(function (id) {
+      var el = document.getElementById('ls-itv-' + id);
+      var v = parseInt(el && el.value, 10);
+      o[FIELDS[id]] = (isFinite(v) && v > 0) ? v : DEFAULTS[FIELDS[id]];
+    });
+    return o;
+  }
+
+  function ready(fn) { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', fn); } else { fn(); } }
 
   ready(function () {
     var host = document.getElementById('view-overview');
     if (!host || document.getElementById('ls-reminder-section')) { return; }
-    /* 插到 KPI 卡片之后 */
     var grid = host.querySelector('.kpi-grid');
     if (grid) {
       var box = document.createElement('div');
       box.innerHTML = SECTTPL;
-      var node = box.firstElementChild;
-      grid.insertAdjacentElement('afterend', node);
+      grid.insertAdjacentElement('afterend', box.firstElementChild);
     } else {
       host.insertAdjacentHTML('afterbegin', SECTTPL);
     }
 
     syncInputs();
-    ['plt-plt', 'plt-whole', 'whole-plt'].forEach(function (id) {
+
+    /* 输入即暂存（避免误关页面丢改动）；「保存配置」给出明确确认 */
+    Object.keys(FIELDS).forEach(function (id) {
       var el = document.getElementById('ls-itv-' + id);
       if (!el) { return; }
       el.addEventListener('input', function () {
-        var itv = loadItv();
-        var key = (id === 'plt-plt') ? 'pltPlt' : (id === 'plt-whole' ? 'pltWhole' : 'wholePlt');
-        itv[key] = el.value === '' ? null : Number(el.value);
-        saveItv(itv);
+        var o = loadItv(), v = parseInt(el.value, 10);
+        o[FIELDS[id]] = (isFinite(v) && v > 0) ? v : DEFAULTS[FIELDS[id]];
+        saveItv(o);
       });
     });
+
     var q = document.getElementById('ls-remind-query');
     if (q) { q.addEventListener('click', render); }
-    var c = document.getElementById('ls-remind-clear');
-    if (c) {
-      c.addEventListener('click', function () {
-        saveItv({}); syncInputs();
+
+    var sv = document.getElementById('ls-remind-save');
+    if (sv) {
+      sv.addEventListener('click', function () {
+        var o = collected();
+        saveItv(o);
+        syncInputs();
         var el = document.getElementById('ls-remind-result');
-        if (el) { el.textContent = '已清除填写。点「查询」查看结果。'; }
-        var b = document.getElementById('ls-remind-basis'); if (b) { b.textContent = ''; }
+        if (el) {
+          el.innerHTML = '<b>配置已保存</b>：全血↔全血 ' + WHOLE_WHOLE + ' 天（固定） · 成分血↔成分血 ' + o.pltPlt +
+            ' 天 · 全血→成分血 ' + o.wholePlt + ' 天 · 成分血→全血 ' + o.pltWhole +
+            ' 天。<br>下次打开会自动带出这些数字，直接点「查询」即可。';
+        }
       });
     }
-    /* 记录变化后，若已经查过，自动刷新 */
+
+    var rs = document.getElementById('ls-remind-reset');
+    if (rs) {
+      rs.addEventListener('click', function () {
+        saveItv({ pltPlt: DEFAULTS.pltPlt, wholePlt: DEFAULTS.wholePlt, pltWhole: DEFAULTS.pltWhole });
+        syncInputs();
+        var el = document.getElementById('ls-remind-result');
+        if (el) {
+          el.innerHTML = '<b>已恢复默认</b>：成分血↔成分血 ' + DEFAULTS.pltPlt + ' 天 · 全血→成分血 ' +
+            DEFAULTS.wholePlt + ' 天 · 成分血→全血 ' + DEFAULTS.pltWhole + ' 天。';
+        }
+      });
+    }
+
+    /* 使用者切换或记录变化后自动刷新结果 */
     ['renderStats', 'renderOverview'].forEach(function (fn) {
       if (typeof window[fn] === 'function' && !window[fn].__lsRemindWrapped) {
         var orig = window[fn];
@@ -2484,6 +2526,7 @@ $("confirm-ok").addEventListener("click", async ()=>{
           var r = orig.apply(this, arguments);
           try {
             var el = document.getElementById('ls-remind-result');
+            try { syncInputs(); } catch (e2) {}
             if (el && /捐献/.test(el.textContent || '')) { render(); }
           } catch (e) {}
           return r;
@@ -2492,10 +2535,10 @@ $("confirm-ok").addEventListener("click", async ()=>{
         window[fn] = wrapped;
       }
     });
+    render();
   });
 
-  function ready(fn) { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', fn); } else { fn(); } }
-  window.__lsRemind = { evaluate: evaluate, render: render };
+  window.__lsRemind = { evaluate: evaluate, render: render, syncInputs: syncInputs, defaults: DEFAULTS, wholeWhole: WHOLE_WHOLE };
 })();
 </script>
 </body>
