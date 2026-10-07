@@ -1795,6 +1795,8 @@ $("confirm-ok").addEventListener("click", async ()=>{
     input.insertAdjacentElement('afterend', box);
     input.insertAdjacentElement('beforebegin', title);
 
+    /* 供页面内其它模块复用（如积分兑换的「兑换地点」），避免重复嵌入数据 */
+    window.__LS_PLACES = DATA;
     fillProvinces(); fillCities(); fillSites();
     new MutationObserver(function () {
       if (!mask.hidden) { syncFromInput(); }
@@ -2004,7 +2006,9 @@ $("confirm-ok").addEventListener("click", async ()=>{
       '    <div style="font-size:17px;font-weight:700">添加兑换记录</div>' +
       '    <button id="ls-red-x" style="background:none;border:none;font-size:24px;color:var(--ink3);cursor:pointer">×</button></div>' +
       '  <label class="f-label">兑换时间</label><input class="f-input" type="date" id="ls-red-date">' +
-      '  <label class="f-label">兑换地点</label><input class="f-input" id="ls-red-place" placeholder="如：市中心血站" maxlength="60">' +
+      '  <label class="f-label">兑换地点（先选省，再选市，最后选血站 / 献血点）</label>' +
+      '  <div id="ls-red-place-wrap"></div>' +
+      '  <input class="f-input" id="ls-red-place" placeholder="其他地点（手填）" maxlength="60" style="display:none">' +
       '  <label class="f-label">兑换物品名称</label><input class="f-input" id="ls-red-item" placeholder="如：保温杯" maxlength="60">' +
       '  <label class="f-label">兑换物品积分</label><input class="f-input" type="number" id="ls-red-cost" min="1" step="1" placeholder="如：50">' +
       '  <label class="f-label">领取兑换物品地点</label><input class="f-input" id="ls-red-pickup" placeholder="如：血站一楼服务台" maxlength="60">' +
@@ -2015,6 +2019,54 @@ $("confirm-ok").addEventListener("click", async ()=>{
       '  </div></div>';
     mask.style.display = 'none';
     document.body.appendChild(mask);
+
+    /* ---- 兑换地点：复用三级数据（省 → 市 → 血站/献血点）---- */
+    (function buildPlacePicker() {
+      var wrap = document.getElementById('ls-red-place-wrap');
+      var free = document.getElementById('ls-red-place');
+      var DATA = window.__LS_PLACES;
+      if (!wrap || !free) { return; }
+      if (!DATA) { free.style.display = ''; return; }   /* 数据未加载时退回手填 */
+      function mk(id, basis) {
+        var s = document.createElement('select');
+        s.id = id; s.className = 'f-input';
+        s.style.cssText = 'flex:1 1 ' + basis + ';min-width:0';
+        return s;
+      }
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px';
+      var P = mk('ls-red-prov', '40%'), C = mk('ls-red-city', '52%'), S = mk('ls-red-site', '100%');
+      function fillP() {
+        var h = '<option value="">选择省 / 直辖市</option>';
+        Object.keys(DATA).forEach(function (p) { h += '<option value="' + p + '">' + p + '</option>'; });
+        h += '<option value="__custom__">其他 / 手填</option>';
+        P.innerHTML = h;
+      }
+      function fillC() {
+        var l = DATA[P.value] ? Object.keys(DATA[P.value]) : [];
+        var h = '<option value="">' + (l.length ? '选择市' : '请先选省') + '</option>';
+        l.forEach(function (c) { h += '<option value="' + c + '">' + c + '</option>'; });
+        C.innerHTML = h; C.disabled = l.length === 0;
+      }
+      function fillS() {
+        var l = (DATA[P.value] && DATA[P.value][C.value]) || [];
+        var h = '<option value="">' + (l.length ? '选择血站 / 献血点' : '请先选市') + '</option>';
+        l.forEach(function (s) { h += '<option value="' + s + '">' + s + '</option>'; });
+        S.innerHTML = h; S.disabled = l.length === 0;
+      }
+      function refreshFree() { free.style.display = (P.value === '__custom__') ? '' : 'none'; }
+      P.addEventListener('change', function () { fillC(); fillS(); refreshFree(); });
+      C.addEventListener('change', function () { fillS(); refreshFree(); });
+      S.addEventListener('change', refreshFree);
+      row.appendChild(P); row.appendChild(C); row.appendChild(S);
+      wrap.appendChild(row);
+      fillP(); fillC(); fillS(); refreshFree();
+      wrap.__reset = function () { P.value = ''; fillC(); fillS(); free.value = ''; refreshFree(); };
+      wrap.__value = function () {
+        if (P.value === '__custom__' || !P.value) { return free.value.trim(); }
+        return (S.value || C.value || '').trim();     /* 允许只选到市级 */
+      };
+    })();
 
     function refreshHint() {
       var cost = Number(document.getElementById('ls-red-cost').value) || 0;
@@ -2028,6 +2080,8 @@ $("confirm-ok").addEventListener("click", async ()=>{
     function openModal() {
       document.getElementById('ls-red-date').value = new Date().toISOString().slice(0, 10);
       ['place', 'item', 'cost', 'pickup'].forEach(function (k) { document.getElementById('ls-red-' + k).value = ''; });
+      var pw = document.getElementById('ls-red-place-wrap');
+      if (pw && pw.__reset) { pw.__reset(); }
       refreshHint();
       mask.hidden = false;
       mask.style.display = 'flex';   /* 内联 display 会覆盖 hidden，必须显式开关 */
@@ -2042,7 +2096,8 @@ $("confirm-ok").addEventListener("click", async ()=>{
 
     document.getElementById('ls-red-save').addEventListener('click', function () {
       var date = document.getElementById('ls-red-date').value;
-      var place = document.getElementById('ls-red-place').value.trim();
+      var pw = document.getElementById('ls-red-place-wrap');
+      var place = (pw && pw.__value) ? pw.__value() : document.getElementById('ls-red-place').value.trim();
       var item = document.getElementById('ls-red-item').value.trim();
       var cost = parseFloat(document.getElementById('ls-red-cost').value);
       var pickup = document.getElementById('ls-red-pickup').value.trim();
