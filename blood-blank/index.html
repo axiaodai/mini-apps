@@ -1155,6 +1155,159 @@ html, body { max-width: 100%; overflow-x: hidden; }
     refresh();
     updateUserLabel();
   }
+  /* ---- 使用者管理：切换 / 新建 / 删除（删除需二次确认）---- */
+  var LS_APP_KEYS = [
+    ["mini-apps-blood-v1", "献血"],
+    ["mini-apps-blood-redeem-v1", "兑换"],
+    ["mini-apps-running-v1", "跑步"]
+  ];
+
+  function escH(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  /* 统计某使用者在各小程序里的记录条数（用于删除前告知删什么） */
+  function lsCountOf(name) {
+    var parts = [], total = 0;
+    LS_APP_KEYS.forEach(function (pair) {
+      var n = 0;
+      try {
+        var o = JSON.parse(localStorage.getItem(pair[0] + "::" + name) || "null");
+        if (o && Array.isArray(o.records)) { n = o.records.length; }
+        else if (Array.isArray(o)) { n = o.length; }
+      } catch (e) {}
+      if (n) { parts.push(pair[1] + " " + n + " 条"); total += n; }
+    });
+    return { total: total, text: parts.length ? parts.join(" · ") : "暂无记录" };
+  }
+
+  function lsDeleteUser(name) {
+    var had = [];
+    LS_APP_KEYS.forEach(function (pair) {
+      try {
+        if (localStorage.getItem(pair[0] + "::" + name) !== null) { had.push(pair[1]); }
+        localStorage.removeItem(pair[0] + "::" + name);
+      } catch (e) {}
+    });
+    try { localStorage.removeItem("mini-apps-blood-intervals-v1::" + name); } catch (e) {}
+    var o = readProfiles();
+    o.list = o.list.filter(function (n) { return n !== name; });
+    if (!o.list.length) { o.list = ["默认"]; }
+    if (o.current === name) { o.current = o.list[0]; }
+    writeProfiles(o);
+    refresh();
+    updateUserLabel();
+    toast("已删除使用者「" + name + "」" + (had.length ? "（清空 " + had.join(" / ") + " 数据）" : ""));
+  }
+
+  function showUserManager() {
+    var old = document.getElementById("ls-users");
+    if (old && old.parentNode) { old.parentNode.removeChild(old); }
+    var mask = document.createElement("div");
+    mask.id = "ls-users";
+    mask.style.cssText = "position:fixed;inset:0;z-index:82;background:rgba(8,10,14,.72);display:flex;" +
+      "align-items:center;justify-content:center;padding:20px";
+    mask.addEventListener("click", function (e) { if (e.target === mask) { mask.remove(); } });
+    var card = document.createElement("div");
+    card.style.cssText = "background:#171a21;border:1px solid #2a3040;border-radius:14px;padding:16px;max-width:360px;width:100%;" +
+      "max-height:86vh;overflow-y:auto;color:#e6e8ee;font:14px/1.6 -apple-system,'Microsoft YaHei',sans-serif";
+    mask.appendChild(card);
+    document.body.appendChild(mask);
+
+    var confirmName = null;
+
+    function head() {
+      return "<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:6px'>" +
+        "<div style='font-size:16px;font-weight:600'>使用者管理</div>" +
+        "<button id='ls-users-x' style='background:none;border:none;color:#9aa3b2;font-size:22px;cursor:pointer'>×</button></div>" +
+        "<div style='color:#9aa3b2;font-size:12.5px;margin-bottom:10px'>数据按使用者分开存放，互不可见。" +
+        "<span style='color:#ffb4b4'>删除会清空该使用者的全部记录，无法恢复。</span></div>";
+    }
+
+    function render() {
+      var o = readProfiles();
+      var html = head();
+      if (confirmName) {
+        var c = lsCountOf(confirmName);
+        html += "<div style='border:1px solid #5a2a30;background:#241a1e;border-radius:12px;padding:12px;margin-bottom:10px'>" +
+          "<div style='font-weight:700;color:#ff9d9d;margin-bottom:6px'>确定删除使用者「" + escH(confirmName) + "」？</div>" +
+          "<div style='font-size:13px;color:#e7d7d7'>将被永久删除：" + escH(c.text) +
+          "（共 " + c.total + " 条），以及该使用者的提醒间隔配置。</div>" +
+          "<div style='font-size:12.5px;color:#c99;margin-top:6px'>此操作不可撤销，也无法通过「导入恢复」找回（除非你之前导出过备份）。</div></div>" +
+          "<div style='display:flex;gap:8px'>" +
+          "<button id='ls-users-cancel' style='flex:1;padding:10px;border-radius:10px;border:1px solid #2a3040;background:#1b2130;color:#dfe6ef;cursor:pointer'>取消</button>" +
+          "<button id='ls-users-del-ok' style='flex:1.4;padding:10px;border-radius:10px;border:1px solid #7a2a33;background:#3a1b20;" +
+          "color:#ff9d9d;font-weight:700;cursor:pointer;white-space:nowrap'>确认删除</button></div>";
+      } else {
+        o.list.forEach(function (name) {
+          var cur = o.current === name;
+          var c = lsCountOf(name);
+          html += "<div style='display:flex;gap:6px;align-items:center;margin:6px 0'>" +
+            "<button data-pick='" + escH(name) + "' style='flex:1;text-align:left;padding:10px;border-radius:10px;cursor:pointer;" +
+            "border:1px solid " + (cur ? "#3f6ad8;background:#1d2740" : "#2a3040;background:#1b2130") + ";color:#dfe6ef;font-size:14px'>" +
+            escH(name) + (cur ? " <span style='color:#7fa7ff;font-size:11.5px'>当前</span>" : "") +
+            "<div style='color:#8b94a6;font-size:11.5px;margin-top:2px'>" + escH(c.text) + "</div></button>" +
+            "<button data-del='" + escH(name) + "' style='padding:9px 11px;border-radius:10px;border:1px solid #5a2a30;" +
+            "background:#2a1a1e;color:#ff8a8a;font-size:12.5px;cursor:pointer;white-space:nowrap'>删除</button></div>";
+        });
+        html += "<div style='border-top:1px solid #2a3040;margin:12px 0 10px'></div>" +
+          "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:6px'>新建使用者（名字建议用笔名/网名，别用真实姓名）</div>" +
+          "<div style='display:flex;gap:6px'>" +
+          "<input id='ls-users-new' placeholder='输入名字' style='flex:1;min-width:0;padding:10px;border-radius:10px;" +
+          "border:1px solid #2a3040;background:#12151c;color:#e6e8ee;font-size:14px'>" +
+          "<button id='ls-users-add' style='padding:10px 14px;border-radius:10px;border:1px solid #2c4a86;background:#1b2e52;" +
+          "color:#cfe0ff;cursor:pointer;white-space:nowrap'>新建</button></div>";
+      }
+      card.innerHTML = html;
+
+      var x = document.getElementById("ls-users-x");
+      if (x) { x.addEventListener("click", function () { mask.remove(); }); }
+      Array.prototype.forEach.call(card.querySelectorAll("[data-pick]"), function (b) {
+        b.addEventListener("click", function () {
+          var name = b.getAttribute("data-pick");
+          switchUser(name);
+          mask.remove();
+        });
+      });
+      Array.prototype.forEach.call(card.querySelectorAll("[data-del]"), function (b) {
+        b.addEventListener("click", function () {
+          confirmName = b.getAttribute("data-del");
+          render();
+        });
+      });
+      var cancel = document.getElementById("ls-users-cancel");
+      if (cancel) { cancel.addEventListener("click", function () { confirmName = null; render(); }); }
+      var ok = document.getElementById("ls-users-del-ok");
+      if (ok) {
+        ok.addEventListener("click", function () {
+          if (ok.getAttribute("data-armed") === "1") {         /* 第二次点击：真正删除 */
+            var who = confirmName;
+            confirmName = null;
+            lsDeleteUser(who);
+            render();
+            return;
+          }
+          ok.setAttribute("data-armed", "1");                  /* 第一次点击：变红警示 */
+          ok.textContent = "再点一次确认删除";
+          ok.style.background = "#7a1f28";
+          ok.style.color = "#fff";
+          ok.style.borderColor = "#a3303c";
+        });
+      }
+      var add = document.getElementById("ls-users-add");
+      if (add) {
+        add.addEventListener("click", function () {
+          var inp = document.getElementById("ls-users-new");
+          var name = inp ? inp.value.trim() : "";
+          if (!name) { toast("请先输入名字"); return; }
+          switchUser(name);
+          mask.remove();
+        });
+      }
+    }
+    render();
+  }
+
   function updateUserLabel() {
     var b = document.getElementById("ls-user");
     if (b) { b.textContent = "使用者：" + currentUser(); }
@@ -1300,12 +1453,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
       try { window.__lsTools.add(item[0], item[1], item[2]); } catch (e) {}
     });
     window.__lsToolsQueue = [];
-    panel.appendChild(btn("使用者：" + currentUser(), function () {
-      var o = readProfiles();
-      var name = prompt("换人 / 新建使用者（数据按使用者隔离，互不可见）\n\n已有：" + o.list.join("、") +
-        "\n\n请输入使用者名字（留空取消）：", "");
-      if (name) switchUser(name);
-    }, "ls-user"));
+    panel.appendChild(btn("使用者：" + currentUser(), function () { showUserManager(); }, "ls-user"));
     panel.appendChild(btn("导出备份", function () {
       var payload = db();
       /* 页面附加数据（如献血页的积分兑换记录）一并导出 */
