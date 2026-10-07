@@ -2337,7 +2337,7 @@ $("confirm-ok").addEventListener("click", async ()=>{
              全血→成分血 90 天、成分血→全血 28 天。
    改动后点「保存配置」即记住（本机、按使用者隔离），下次打开自动带出。 */
 (function () {
-  var SECTTPL = "      <div class=\"section\" id=\"ls-reminder-section\">\n        <div class=\"section-head\">\n          <h2>献血提醒</h2>\n          <span class=\"hint\">间隔按各地规定填写，保存后下次打开自动带出</span>\n        </div>\n        <div class=\"card\">\n          <div class=\"f-grid2\">\n            <div>\n              <label class=\"f-label\">全血 → 全血（天，固定）</label>\n              <input class=\"f-input\" id=\"ls-itv-whole-whole\" value=\"182\" readonly style=\"background:#F6F1EC;color:#8b8378\">\n            </div>\n            <div>\n              <label class=\"f-label\">成分血 → 成分血（天）</label>\n              <input class=\"f-input\" type=\"number\" id=\"ls-itv-plt-plt\" min=\"1\" step=\"1\" placeholder=\"默认 14\">\n            </div>\n          </div>\n          <div class=\"f-grid2\" style=\"margin-top:10px\">\n            <div>\n              <label class=\"f-label\">全血 → 成分血（天）</label>\n              <input class=\"f-input\" type=\"number\" id=\"ls-itv-whole-plt\" min=\"1\" step=\"1\" placeholder=\"默认 90\">\n            </div>\n            <div>\n              <label class=\"f-label\">成分血 → 全血（天）</label>\n              <input class=\"f-input\" type=\"number\" id=\"ls-itv-plt-whole\" min=\"1\" step=\"1\" placeholder=\"默认 28\">\n            </div>\n          </div>\n          <div class=\"chart-note\" style=\"margin-top:8px\">\n            默认：全血→全血 182 天（半年，固定）· 成分血→成分血 14 天 · 全血→成分血 90 天 · 成分血→全血 28 天。\n            改动后点「保存配置」，下次打开自动带出，直接点「查询」即可。配置只存本机浏览器。\n          </div>\n          <div style=\"display:flex;gap:8px;margin-top:12px;flex-wrap:wrap\">\n            <button id=\"ls-remind-query\" style=\"flex:1 1 40%;padding:12px;border-radius:12px;border:none;background:#B3261E;color:#fff;font-weight:600;cursor:pointer\">查询</button>\n            <button id=\"ls-remind-save\" style=\"flex:1 1 40%;padding:12px;border-radius:12px;border:none;background:#C9962E;color:#fff;font-weight:600;cursor:pointer\">保存配置</button>\n            <button id=\"ls-remind-reset\" style=\"flex:1 1 100%;padding:10px;border-radius:12px;border:1px solid var(--line);background:#fff;cursor:pointer\">恢复默认</button>\n          </div>\n          <div id=\"ls-remind-result\" style=\"margin-top:12px;font-size:13.5px;line-height:1.7;\n               border:1px solid var(--line);border-radius:12px;padding:12px;background:#FDF7F5\">点「查询」查看今天是否可以献血。</div>\n          <div id=\"ls-remind-basis\" class=\"chart-note\" style=\"margin-top:6px\"></div>\n        </div>\n      </div>\n";
+  var SECTTPL = "      <div class=\"section\" id=\"ls-reminder-section\">\n        <div class=\"section-head\">\n          <h2>献血提醒</h2>\n          <span class=\"hint\">间隔按各地规定填写，保存后下次打开自动带出</span>\n        </div>\n        <div class=\"card\">\n          <div class=\"f-grid2\">\n            <div>\n              <label class=\"f-label\">全血 → 全血（天，固定）</label>\n              <input class=\"f-input\" id=\"ls-itv-whole-whole\" value=\"182\" readonly style=\"background:#F6F1EC;color:#8b8378\">\n            </div>\n            <div>\n              <label class=\"f-label\">成分血 → 成分血（天）</label>\n              <input class=\"f-input\" type=\"number\" id=\"ls-itv-plt-plt\" min=\"1\" step=\"1\" placeholder=\"默认 14\">\n            </div>\n          </div>\n          <div class=\"f-grid2\" style=\"margin-top:10px\">\n            <div>\n              <label class=\"f-label\">全血 → 成分血（天）</label>\n              <input class=\"f-input\" type=\"number\" id=\"ls-itv-whole-plt\" min=\"1\" step=\"1\" placeholder=\"默认 90\">\n            </div>\n            <div>\n              <label class=\"f-label\">成分血 → 全血（天）</label>\n              <input class=\"f-input\" type=\"number\" id=\"ls-itv-plt-whole\" min=\"1\" step=\"1\" placeholder=\"默认 28\">\n            </div>\n          </div>\n          <div class=\"chart-note\" style=\"margin-top:8px\">\n            按<b>最近一次献血</b>的类型计算：最近一次是成分血 → 成分血＝当日＋成分血间隔、全血＝当日＋成分血→全血间隔；\n            最近一次是全血 → 全血＝当日＋182 天、成分血＝当日＋全血→成分血间隔；同日有两条记录时按成分血计算。\n            默认：182（固定）/ 14 / 90 / 28。改动后点「保存配置」，下次打开自动带出。配置只存本机浏览器。\n          </div>\n          <div style=\"display:flex;gap:8px;margin-top:12px;flex-wrap:wrap\">\n            <button id=\"ls-remind-query\" style=\"flex:1 1 40%;padding:12px;border-radius:12px;border:none;background:#B3261E;color:#fff;font-weight:600;cursor:pointer\">查询</button>\n            <button id=\"ls-remind-save\" style=\"flex:1 1 40%;padding:12px;border-radius:12px;border:none;background:#C9962E;color:#fff;font-weight:600;cursor:pointer\">保存配置</button>\n            <button id=\"ls-remind-reset\" style=\"flex:1 1 100%;padding:10px;border-radius:12px;border:1px solid var(--line);background:#fff;cursor:pointer\">恢复默认</button>\n          </div>\n          <div id=\"ls-remind-result\" style=\"margin-top:12px;font-size:13.5px;line-height:1.7;\n               border:1px solid var(--line);border-radius:12px;padding:12px;background:#FDF7F5\">点「查询」查看今天是否可以献血。</div>\n          <div id=\"ls-remind-basis\" class=\"chart-note\" style=\"margin-top:6px\"></div>\n        </div>\n      </div>\n";
   var PKEY = 'mini-apps-profiles-v1';
   var REC = 'mini-apps-blood-v1';
   var ITV = 'mini-apps-blood-intervals-v1';
@@ -2362,6 +2362,7 @@ $("confirm-ok").addEventListener("click", async ()=>{
     var o = loadItv(), v = Number(o[key]);
     return (isFinite(v) && v > 0) ? v : DEFAULTS[key];
   }
+  function num(key) { return val(key); }
 
   /* ---- 日期工具 ---- */
   function pad(n) { return ('0' + n).slice(-2); }
@@ -2383,20 +2384,40 @@ $("confirm-ok").addEventListener("click", async ()=>{
   }
 
   function evaluate() {
-    var itv = loadItv();
-    var num = function (key) { var v = Number(itv[key]); return (isFinite(v) && v > 0) ? v : DEFAULTS[key]; };
     var pltPlt = num('pltPlt'), wholePlt = num('wholePlt'), pltWhole = num('pltWhole');
     var lastWhole = lastOf('全血'), lastPlt = lastOf('血小板');
-    var missing = [];
 
-    var wholeAt = lastWhole ? addDays(lastWhole, WHOLE_WHOLE) : '';
-    if (lastPlt) { wholeAt = later(wholeAt, addDays(lastPlt, pltWhole)); }
+    /* 决定"最近一次献血"：日期更晚者；同日按成分血（并在依据里注明） */
+    var mode = '', ref = '', tie = false;
+    if (lastPlt && lastWhole) {
+      if (lastPlt > lastWhole) { mode = 'plt'; ref = lastPlt; }
+      else if (lastPlt === lastWhole) { mode = 'plt'; ref = lastPlt; tie = true; }
+      else { mode = 'whole'; ref = lastWhole; }
+    } else if (lastPlt) { mode = 'plt'; ref = lastPlt; }
+    else if (lastWhole) { mode = 'whole'; ref = lastWhole; }
 
-    var pltAt = lastPlt ? addDays(lastPlt, pltPlt) : '';
-    if (lastWhole) { pltAt = later(pltAt, addDays(lastWhole, wholePlt)); }
+    var wholeAt = '', pltAt = '';
+    if (mode === 'plt') {
+      pltAt = addDays(ref, pltPlt);        /* 成分血 → 成分血 */
+      wholeAt = addDays(ref, pltWhole);    /* 成分血 → 全血 */
+    } else if (mode === 'whole') {
+      wholeAt = addDays(ref, WHOLE_WHOLE); /* 全血 → 全血，固定 182 天 */
+      pltAt = addDays(ref, wholePlt);      /* 全血 → 成分血 */
+    }
 
-    return { lastWhole: lastWhole, lastPlt: lastPlt, wholeAt: wholeAt, pltAt: pltAt,
-             missing: missing, itv: { wholeWhole: WHOLE_WHOLE, pltPlt: pltPlt, wholePlt: wholePlt, pltWhole: pltWhole } };
+    /* 透明化：另一种类型自身规则算出的日期更晚时提示（不改变本次结果） */
+    var notice = '';
+    if (mode === 'plt' && lastWhole) {
+      var wOwn = addDays(lastWhole, WHOLE_WHOLE);
+      if (wOwn > wholeAt) {
+        notice = '注意：若按最近一次全血 ' + lastWhole + ' 计算，全血间隔 ' + WHOLE_WHOLE + ' 天应到 ' + wOwn +
+                 '；本次结果按最近一次成分血 ' + ref + ' 计算。';
+      }
+    }
+
+    return { mode: mode, ref: ref, tie: tie, lastWhole: lastWhole, lastPlt: lastPlt,
+             wholeAt: wholeAt, pltAt: pltAt, notice: notice,
+             itv: { wholeWhole: WHOLE_WHOLE, pltPlt: pltPlt, wholePlt: wholePlt, pltWhole: pltWhole } };
   }
 
   function render() {
@@ -2407,11 +2428,19 @@ $("confirm-ok").addEventListener("click", async ()=>{
     var dWhole = e.wholeAt ? fromToday(e.wholeAt) : null;
     var dPlt = e.pltAt ? fromToday(e.pltAt) : null;
     var bt = ['今天：' + today()];
-    bt.push(e.lastWhole ? ('最近一次全血 ' + e.lastWhole + (e.wholeAt ? ' → 可献全血 ' + e.wholeAt : '')) : '无全血记录');
-    bt.push(e.lastPlt ? ('最近一次成分血 ' + e.lastPlt + (e.pltAt ? ' → 可献成分血 ' + e.pltAt : '')) : '无成分血记录');
-    bt.push('间隔：全血↔全血 ' + WHOLE_WHOLE + ' 天 · 成分血↔成分血 ' + e.itv.pltPlt + ' 天 · 全血→成分血 ' + e.itv.wholePlt + ' 天 · 成分血→全血 ' + e.itv.pltWhole + ' 天');
+    bt.push(e.lastWhole ? ('最近一次全血 ' + e.lastWhole) : '无全血记录');
+    bt.push(e.lastPlt ? ('最近一次成分血 ' + e.lastPlt) : '无成分血记录');
+    if (e.mode === 'plt') {
+      bt.push('按最近一次成分血 ' + e.ref + ' 计算' + (e.tie ? '（同日有全血记录，按成分血算）' : '') +
+              '：成分血 ' + e.itv.pltPlt + ' 天 → ' + e.pltAt + '；全血 ' + e.itv.pltWhole + ' 天 → ' + e.wholeAt);
+    } else if (e.mode === 'whole') {
+      bt.push('按最近一次全血 ' + e.ref + ' 计算：全血 ' + e.itv.wholeWhole + ' 天 → ' + e.wholeAt +
+              '；成分血 ' + e.itv.wholePlt + ' 天 → ' + e.pltAt);
+    }
+    bt.push('间隔设置：全血↔全血 ' + e.itv.wholeWhole + ' 天（固定）· 成分血↔成分血 ' + e.itv.pltPlt +
+            ' 天 · 全血→成分血 ' + e.itv.wholePlt + ' 天 · 成分血→全血 ' + e.itv.pltWhole + ' 天');
 
-    if (!e.lastWhole && !e.lastPlt) {
+    if (!e.mode) {
       el.innerHTML = '还没有献血记录：请先添加记录，再来查询。';
       basis.textContent = bt.join(' · ');
       return;
@@ -2428,7 +2457,8 @@ $("confirm-ok").addEventListener("click", async ()=>{
     } else {
       msg = '您可以在 ' + dPlt + ' 天后（' + e.pltAt + '）捐献成分血，' + dWhole + ' 天之后（' + e.wholeAt + '）捐献全血';
     }
-    el.innerHTML = '<b style="font-size:14.5px">' + msg + '</b>';
+    el.innerHTML = '<b style="font-size:14.5px">' + msg + '</b>' +
+      (e.notice ? '<div style="margin-top:8px;font-size:12.5px;color:#8b6413;background:#FBF3E4;border-radius:10px;padding:8px">' + e.notice + '</div>' : '');
     basis.textContent = bt.join(' · ');
   }
 
