@@ -985,6 +985,22 @@ main{
     return changed;
   }
   function full(d) { return { records: d.records }; }
+  /* 积分兑换记录的键（与兑换模块保持一致，按使用者隔离） */
+  function redeemKey() {
+    var u = "默认";
+    try { u = (JSON.parse(localStorage.getItem("mini-apps-profiles-v1") || "{}").current) || "默认"; } catch (e) {}
+    return "mini-apps-blood-redeem-v1::" + u;
+  }
+  function extraExport() {
+    try {
+      var v = JSON.parse(localStorage.getItem(redeemKey()) || "null");
+      return v && v.length ? { redeem: v } : {};
+    } catch (e) { return {}; }
+  }
+  function extraImport(obj) {
+    if (!obj || !Array.isArray(obj.redeem)) { return; }
+    try { localStorage.setItem(redeemKey(), JSON.stringify(obj.redeem)); } catch (e) {}
+  }
   /* ---------- 请求代理 ---------- */
   window.fetch = function (input, init) {
     var url = (typeof input === "string") ? input : ((input && input.url) || "");
@@ -1075,6 +1091,7 @@ main{
           if (!Array.isArray(recs)) throw new Error("文件里没有 records 数组");
           if (!confirm("导入将覆盖「" + currentUser() + "」当前的 " + db().records.length + " 条记录，继续？")) return;
           if (!save({ records: recs })) { alert("写入失败：可能是无痕模式或存储空间不足"); return; }
+          try { if (typeof extraImport === 'function') { extraImport(obj); } } catch (e) {}
           refresh();
           toast("已导入 " + recs.length + " 条记录到「" + currentUser() + "」");
         } catch (e) { alert("导入失败：" + e.message); }
@@ -1094,7 +1111,15 @@ main{
       if (name) switchUser(name);
     }, "ls-user"));
     panel.appendChild(btn("导出备份", function () {
-      var blob = new Blob([JSON.stringify(db(), null, 2)], { type: "application/json" });
+      var payload = db();
+      /* 页面附加数据（如献血页的积分兑换记录）一并导出 */
+      try {
+        if (typeof extraExport === 'function') {
+          var ex = extraExport() || {};
+          Object.keys(ex).forEach(function (k) { payload[k] = ex[k]; });
+        }
+      } catch (e) {}
+      var blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
       var a = document.createElement("a");
       var d = new Date(), p = function (n) { return ("0" + n).slice(-2); };
       a.href = URL.createObjectURL(blob);
@@ -1902,6 +1927,208 @@ $("confirm-ok").addEventListener("click", async ()=>{
     var anchor = input.closest ? (input.closest('.f-unit') || input) : input;
     anchor.insertAdjacentElement('afterend', hint);
     input.placeholder = '按当地标准，可留空';
+  });
+})();
+</script>
+<script>
+/* ==== 积分兑换模块（公开版新增）====================================
+   表格：兑换时间 / 兑换地点 / 兑换物品名称 / 兑换物品积分 / 领取兑换物品地点 /
+         兑换完后剩余积分（自动计算 = 累计积分 − 该行及之前已兑换积分）
+   与「累计积分」同源：卡片内新增一行「剩余 N 分」，两边实时联动。  */
+(function () {
+  var PKEY = 'mini-apps-profiles-v1';
+  var REC_KEY = 'mini-apps-blood-v1';
+  var RED_KEY = 'mini-apps-blood-redeem-v1';
+
+  function user() { try { return (JSON.parse(localStorage.getItem(PKEY) || '{}').current) || '默认'; } catch (e) { return '默认'; } }
+  function recsKey() { return REC_KEY + '::' + user(); }
+  function redKey() { return RED_KEY + '::' + user(); }
+  function loadRed() { try { var a = JSON.parse(localStorage.getItem(redKey()) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+  function saveRed(a) { try { localStorage.setItem(redKey(), JSON.stringify(a)); return true; } catch (e) { return false; } }
+  function totalEarned() {
+    try {
+      var r = JSON.parse(localStorage.getItem(recsKey()) || '{}').records || [];
+      return r.reduce(function (s, x) { return s + (Number(x[5]) || 0); }, 0);
+    } catch (e) { return 0; }
+  }
+  function sorted() {
+    return loadRed().map(function (row, i) { return { row: row, i: i }; })
+      .sort(function (a, b) {
+        var da = String(a.row[0] || ''), db = String(b.row[0] || '');
+        return da === db ? a.i - b.i : (da < db ? -1 : 1);
+      });
+  }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; }); }
+
+  function ready(fn) { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', fn); } else { fn(); } }
+
+  ready(function () {
+    var host = document.getElementById('view-overview');
+    if (!host || document.getElementById('ls-redeem-module')) { return; }
+
+    var card = document.createElement('div');
+    card.id = 'ls-redeem-module';
+    card.className = 'card';
+    card.style.cssText = 'margin-top:14px';
+    card.innerHTML =
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">' +
+      '  <div><div style="font-size:15px;font-weight:700">积分兑换</div>' +
+      '  <div id="ls-red-sum" style="font-size:12px;color:var(--ink3);margin-top:3px"></div></div>' +
+      '  <button id="ls-red-add" style="flex-shrink:0;padding:8px 12px;border-radius:10px;border:1px solid var(--line);' +
+      '    background:var(--card);color:var(--ink);font-size:13px;cursor:pointer">＋ 添加兑换</button>' +
+      '</div>' +
+      '<div style="overflow-x:auto;margin-top:10px">' +
+      '  <table id="ls-red-table" style="width:100%;border-collapse:collapse;font-size:12px;min-width:620px">' +
+      '    <thead><tr>' +
+      '      <th style="text-align:left;padding:7px 6px;border-bottom:1px solid var(--line);white-space:nowrap">兑换时间</th>' +
+      '      <th style="text-align:left;padding:7px 6px;border-bottom:1px solid var(--line);white-space:nowrap">兑换地点</th>' +
+      '      <th style="text-align:left;padding:7px 6px;border-bottom:1px solid var(--line);white-space:nowrap">兑换物品名称</th>' +
+      '      <th style="text-align:right;padding:7px 6px;border-bottom:1px solid var(--line);white-space:nowrap">兑换物品积分</th>' +
+      '      <th style="text-align:left;padding:7px 6px;border-bottom:1px solid var(--line);white-space:nowrap">领取兑换物品地点</th>' +
+      '      <th style="text-align:right;padding:7px 6px;border-bottom:1px solid var(--line);white-space:nowrap">兑换完后剩余积分</th>' +
+      '      <th style="border-bottom:1px solid var(--line)"></th>' +
+      '    </tr></thead><tbody id="ls-red-body"></tbody>' +
+      '  </table>' +
+      '</div>' +
+      '<div id="ls-red-empty" style="font-size:12px;color:var(--ink3);margin-top:8px">还没有兑换记录。点右上角「＋ 添加兑换」。</div>';
+    host.appendChild(card);
+
+    /* 弹层：新增兑换 */
+    var mask = document.createElement('div');
+    mask.id = 'ls-red-mask';
+    mask.hidden = true;
+    mask.style.cssText = 'position:fixed;inset:0;background:rgba(30,15,12,.5);z-index:120;display:none;align-items:flex-end;justify-content:center';
+    mask.innerHTML =
+      '<div class="modal" style="background:#fff;width:100%;max-width:480px;border-radius:18px 18px 0 0;padding:18px;max-height:88vh;overflow-y:auto">' +
+      '  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">' +
+      '    <div style="font-size:17px;font-weight:700">添加兑换记录</div>' +
+      '    <button id="ls-red-x" style="background:none;border:none;font-size:24px;color:var(--ink3);cursor:pointer">×</button></div>' +
+      '  <label class="f-label">兑换时间</label><input class="f-input" type="date" id="ls-red-date">' +
+      '  <label class="f-label">兑换地点</label><input class="f-input" id="ls-red-place" placeholder="如：市中心血站" maxlength="60">' +
+      '  <label class="f-label">兑换物品名称</label><input class="f-input" id="ls-red-item" placeholder="如：保温杯" maxlength="60">' +
+      '  <label class="f-label">兑换物品积分</label><input class="f-input" type="number" id="ls-red-cost" min="1" step="1" placeholder="如：50">' +
+      '  <label class="f-label">领取兑换物品地点</label><input class="f-input" id="ls-red-pickup" placeholder="如：血站一楼服务台" maxlength="60">' +
+      '  <div id="ls-red-hint" style="font-size:12px;color:var(--ink3);margin-top:6px"></div>' +
+      '  <div style="display:flex;gap:10px;margin-top:16px">' +
+      '    <button id="ls-red-cancel" style="flex:1;padding:12px;border-radius:12px;border:1px solid var(--line);background:#fff;cursor:pointer">取消</button>' +
+      '    <button id="ls-red-save" style="flex:1;padding:12px;border-radius:12px;border:none;background:var(--gold,#C9962E);color:#fff;font-weight:600;cursor:pointer">保存兑换</button>' +
+      '  </div></div>';
+    mask.style.display = 'none';
+    document.body.appendChild(mask);
+
+    function refreshHint() {
+      var cost = Number(document.getElementById('ls-red-cost').value) || 0;
+      var left = totalEarned() - loadRed().reduce(function (s, r) { return s + (Number(r[3]) || 0); }, 0);
+      document.getElementById('ls-red-hint').textContent =
+        '当前累计积分 ' + totalEarned() + ' 分 · 已兑换 ' +
+        loadRed().reduce(function (s, r) { return s + (Number(r[3]) || 0); }, 0) +
+        ' 分 · 剩余 ' + left + ' 分' + (cost > left ? '（本次 ' + cost + ' 分已超出剩余）' : '');
+    }
+
+    function openModal() {
+      document.getElementById('ls-red-date').value = new Date().toISOString().slice(0, 10);
+      ['place', 'item', 'cost', 'pickup'].forEach(function (k) { document.getElementById('ls-red-' + k).value = ''; });
+      refreshHint();
+      mask.hidden = false;
+      mask.style.display = 'flex';   /* 内联 display 会覆盖 hidden，必须显式开关 */
+    }
+    function closeModal() { mask.hidden = true; mask.style.display = 'none'; }
+
+    document.getElementById('ls-red-add').addEventListener('click', openModal);
+    document.getElementById('ls-red-x').addEventListener('click', closeModal);
+    document.getElementById('ls-red-cancel').addEventListener('click', closeModal);
+    mask.addEventListener('click', function (e) { if (e.target === mask) { closeModal(); } });
+    document.getElementById('ls-red-cost').addEventListener('input', refreshHint);
+
+    document.getElementById('ls-red-save').addEventListener('click', function () {
+      var date = document.getElementById('ls-red-date').value;
+      var place = document.getElementById('ls-red-place').value.trim();
+      var item = document.getElementById('ls-red-item').value.trim();
+      var cost = parseFloat(document.getElementById('ls-red-cost').value);
+      var pickup = document.getElementById('ls-red-pickup').value.trim();
+      if (!date) { alert('请选择兑换时间'); return; }
+      if (!item) { alert('请填写兑换物品名称'); return; }
+      if (!isFinite(cost) || cost <= 0) { alert('请填写兑换物品积分'); return; }
+      var arr = loadRed();
+      arr.push([date, place, item, cost, pickup]);
+      if (!saveRed(arr)) { alert('写入失败：可能是无痕模式或存储空间不足'); return; }
+      closeModal();
+      render();
+    });
+
+    function del(i) {
+      var arr = loadRed();
+      if (!arr[i]) { return; }
+      if (!confirm('确定删除这条兑换记录吗？\n' + arr[i][2] + ' · ' + arr[i][3] + ' 分')) { return; }
+      arr.splice(i, 1);
+      saveRed(arr);
+      render();
+    }
+
+    function render() {
+      var earned = totalEarned();
+      var rows = sorted();
+      var body = document.getElementById('ls-red-body');
+      var used = 0, html = '';
+      rows.forEach(function (o) {
+        var r = o.row, cost = Number(r[3]) || 0;
+        used += cost;
+        var left = earned - used;
+        html += '<tr>' +
+          '<td style="padding:8px 6px;border-bottom:1px solid var(--line);white-space:nowrap">' + esc(r[0]) + '</td>' +
+          '<td style="padding:8px 6px;border-bottom:1px solid var(--line)">' + esc(r[1]) + '</td>' +
+          '<td style="padding:8px 6px;border-bottom:1px solid var(--line)">' + esc(r[2]) + '</td>' +
+          '<td style="padding:8px 6px;border-bottom:1px solid var(--line);text-align:right;font-variant-numeric:tabular-nums">' + cost + ' 分</td>' +
+          '<td style="padding:8px 6px;border-bottom:1px solid var(--line)">' + esc(r[4]) + '</td>' +
+          '<td style="padding:8px 6px;border-bottom:1px solid var(--line);text-align:right;font-variant-numeric:tabular-nums;font-weight:600;color:' +
+          (left < 0 ? 'var(--red)' : 'var(--ink)') + '">' + left + ' 分</td>' +
+          '<td style="padding:8px 6px;border-bottom:1px solid var(--line);text-align:right">' +
+          '<button data-del="' + o.i + '" style="background:none;border:none;color:var(--ink3);cursor:pointer;font-size:15px">✕</button></td>' +
+          '</tr>';
+      });
+      body.innerHTML = html;
+      Array.prototype.forEach.call(body.querySelectorAll('[data-del]'), function (b) {
+        b.addEventListener('click', function () { del(Number(b.getAttribute('data-del'))); });
+      });
+      document.getElementById('ls-red-empty').style.display = rows.length ? 'none' : '';
+      var left = earned - used;
+      document.getElementById('ls-red-sum').textContent =
+        '累计积分 ' + earned + ' 分 · 已兑换 ' + used + ' 分 · 剩余 ' + left + ' 分';
+      /* 与「累计积分」卡片联动：卡片内补一行剩余积分 */
+      var kpi = document.getElementById('kpi-points');
+      if (kpi) {
+        var box = kpi.parentNode;
+        var line = document.getElementById('ls-remaining');
+        if (!line) {
+          line = document.createElement('div');
+          line.id = 'ls-remaining';
+          line.style.cssText = 'font-size:12px;margin-top:5px';
+          box.appendChild(line);
+        }
+        line.innerHTML = '剩余 <b style="font-family:var(--font-display);font-size:14px">' + left + '</b> 分';
+        line.style.color = left < 0 ? 'var(--red)' : 'var(--ok,#2E7D5B)';
+      }
+    }
+
+    /* 页面每次重算汇总时同步刷新本模块（新增献血记录会改变累计积分） */
+    if (typeof renderOverview === 'function') {
+      var _ro = renderOverview;
+      renderOverview = function () { var r = _ro.apply(this, arguments); try { render(); } catch (e) {} return r; };
+    }
+    ['renderStats', 'renderHonor'].forEach(function (fn) {
+      if (typeof window[fn] === 'function' && !window[fn].__lsWrapped) {
+        var orig = window[fn];
+        var wrapped = function () { var r = orig.apply(this, arguments); try { render(); } catch (e) {} return r; };
+        wrapped.__lsWrapped = true;
+        window[fn] = wrapped;
+      }
+    });
+    render();
+    /* 「使用者」切换后重新渲染 */
+    document.addEventListener('click', function (e) {
+      var t = e.target;
+      if (t && t.id === 'ls-user') { setTimeout(render, 50); }
+    });
   });
 })();
 </script>
