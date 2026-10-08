@@ -966,8 +966,6 @@ html, body { max-width: 100%; overflow-x: hidden; }
 
 <script src="../vendor/echarts.min.js" integrity="sha384-pPi0zxBAoDu6+JXW/C68UZLvBUUtU+7zonhif43rqj7pxsGyqyqzcian2Rj37Rss" crossorigin="anonymous"></script>
 
-
-
 <script>/* ==== 本地存储代理（公开版：不连服务器 · 按使用者隔离） ====
    这些页面原本调用 NAS 上的 /api/*；公开版改为读写浏览器本地存储。
    同一台设备上可以有多位使用者，各自的数据互不可见。
@@ -3465,7 +3463,7 @@ $("confirm-ok").addEventListener("click", async ()=>{
     var idx = ml.indexOf(max);
     chart.setOption({
       color: ['#B3261E', '#C9962E'],
-      grid: { left: 46, right: 34, top: 18, bottom: 30 },
+      grid: { left: 30, right: 26, top: 16, bottom: 4, containLabel: true },
       tooltip: {
         trigger: 'axis', confine: true, backgroundColor: '#33231F', borderWidth: 0,
         textStyle: { color: '#fff', fontSize: 12 },
@@ -3475,27 +3473,24 @@ $("confirm-ok").addEventListener("click", async ()=>{
                  data[i].count + ' 次 · 折算 ' + data[i].times + ' 次';
         }
       },
-      legend: { show: true, top: -2, right: 0, icon: 'roundRect', itemWidth: 10, itemHeight: 10,
-                textStyle: { color: '#6B5750', fontSize: 11 } },
+      legend: { show: false },
       xAxis: {
         type: 'category', data: data.map(function (d) { return label(d.month); }),
         axisLine: { lineStyle: { color: '#EDE4DB' } }, axisTick: { show: false },
-        axisLabel: { color: '#6B5750', fontSize: 10, fontFamily: 'Noto Sans SC',
-                     interval: data.length > 8 ? 'auto' : 0, rotate: data.length > 8 ? 40 : 0 }
+        axisLabel: { color: '#6B5750', fontSize: 10, fontFamily: 'Noto Sans SC', interval: data.length > 12 ? 1 : 0, hideOverlap: true, rotate: 0, formatter: function (v) { if (/(^|[^0-9])1月$/.test(v)) { return String(v).replace(/年1月$/, '年'); } return String(v).replace(/^[0-9]+年/, ''); } }
       },
       yAxis: [
         { type: 'value', name: 'ml', nameTextStyle: { color: '#98837B', fontSize: 10 },
           axisLabel: { color: '#98837B', fontSize: 10, fontFamily: 'Barlow Condensed' },
           splitLine: { lineStyle: { color: '#F3ECE5' } } },
-        { type: 'value', name: '次', nameTextStyle: { color: '#98837B', fontSize: 10 },
+        { type: 'value', name: '次', minInterval: 1, nameTextStyle: { color: '#98837B', fontSize: 10 },
           axisLabel: { color: '#98837B', fontSize: 10, fontFamily: 'Barlow Condensed' },
           splitLine: { show: false } }
       ],
       series: [
         { name: '折算 ml', type: 'bar', data: ml, barMaxWidth: 34,
           itemStyle: { borderRadius: [5, 5, 0, 0] },
-          label: { show: true, position: 'top', color: '#B3261E', fontSize: 10, fontFamily: 'Barlow Condensed',
-                   formatter: function (p) { return p.value ? p.value : ''; } } },
+          label: { show: true, position: 'top', color: '#B3261E', fontSize: 10, fontFamily: 'Barlow Condensed', formatter: function (p) { var mx = Math.max.apply(null, ml); return (p.value && p.value === mx) ? p.value : ''; } } },
         { name: '次数', type: 'line', yAxisIndex: 1, data: cnt, smooth: true, symbolSize: 6,
           lineStyle: { width: 2 }, itemStyle: { color: '#C9962E' } }
       ]
