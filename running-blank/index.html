@@ -831,6 +831,13 @@ html, body { max-width: 100%; overflow-x: hidden; }
 
 <script src="../vendor/echarts.min.js" integrity="sha384-pPi0zxBAoDu6+JXW/C68UZLvBUUtU+7zonhif43rqj7pxsGyqyqzcian2Rj37Rss" crossorigin="anonymous"></script>
 
+
+
+
+
+
+
+
 <script>/* ==== 本地存储代理（公开版：不连服务器 · 按使用者隔离） ====
    这些页面原本调用 NAS 上的 /api/*；公开版改为读写浏览器本地存储。
    同一台设备上可以有多位使用者，各自的数据互不可见。
@@ -850,6 +857,36 @@ html, body { max-width: 100%; overflow-x: hidden; }
       return o;
     } catch (e) { return { current: "默认", list: ["默认"] }; }
   }
+  /* ---- 记录列表：正序 / 倒序 ---- */
+  var SORT_KEY = "mini-apps-sort-v1";
+  window.__lsSortAsc = function () {
+    try { return localStorage.getItem(SORT_KEY) === "asc"; } catch (e) { return false; }
+  };
+  function sortSet(asc) {
+    try { localStorage.setItem(SORT_KEY, asc ? "asc" : "desc"); } catch (e) {}
+    try { if (typeof renderRecList === "function") { renderRecList(); } } catch (e) {}
+    paintSortButton();
+  }
+  function paintSortButton() {
+    var host = document.getElementById("rec-sub");
+    if (!host || !host.parentNode) { return; }
+    var btn = document.getElementById("ls-sort-btn");
+    if (!btn) {
+      btn = document.createElement("button");
+      btn.id = "ls-sort-btn";
+      btn.type = "button";
+      btn.style.cssText = "margin-left:8px;padding:4px 10px;border-radius:20px;border:1px solid var(--line,#e3d9d2);" +
+        "background:transparent;color:inherit;font-size:12px;cursor:pointer;vertical-align:middle";
+      btn.addEventListener("click", function (e) {
+        e.preventDefault(); e.stopPropagation();
+        sortSet(!window.__lsSortAsc());
+      });
+      host.parentNode.insertBefore(btn, host.nextSibling);
+    }
+    btn.textContent = window.__lsSortAsc() ? "正序 ↑" : "倒序 ↓";
+    btn.title = "点击切换「正序 / 倒序」（按日期）";
+  }
+
   function freeSnapshotSpace() {
     /* 快照功能已取消：把本机遗留的快照数据删掉，回收存储空间 */
     var n = 0;
@@ -1390,14 +1427,18 @@ html, body { max-width: 100%; overflow-x: hidden; }
     for (var i = 0; i < rows.length; i++) {
       var li = rows[i];
       if (li.querySelector("[data-lsedit]")) { continue; }
-      /* 记录索引：优先用页面上已有的 data-edit / data-del，其次按顺序 */
-      var ref = li.querySelector("[data-edit]") || li.querySelector("[data-del]");
-      var idx = ref ? Number(ref.getAttribute("data-edit") || ref.getAttribute("data-del")) : i;
+      /* 记录索引：必须用页面上给出的真实下标（data-idx / data-edit），
+         取不到就不加按钮 —— 宁可不给编辑，也绝不能改错记录 */
+      var ref = li.querySelector("[data-idx]") || li.querySelector("[data-edit]") || li.querySelector("[data-del]");
+      var raw = ref ? (ref.getAttribute("data-idx") || ref.getAttribute("data-edit") || ref.getAttribute("data-del")) : null;
+      if (raw === null || raw === undefined || raw === "" || isNaN(Number(raw))) { continue; }
+      var idx = Number(raw);
       var holder = li.querySelector(".rec-ops") || li;
       var b = document.createElement("button");
       b.type = "button";
       b.className = "rec-op edit";
       b.setAttribute("data-lsedit", String(idx));
+      try { li.setAttribute("data-ls-rowidx", String(idx)); } catch (e) {}
       b.textContent = "编辑";
       if (li.querySelector("[data-edit]")) { continue; }   /* 页面自带编辑的（跑步页）就不重复加 */
       holder.appendChild(b);
@@ -2031,9 +2072,10 @@ html, body { max-width: 100%; overflow-x: hidden; }
       var list = document.getElementById("rec-list");
       if (!list) { setTimeout(watchRecList, 500); return; }
       try {
-        new MutationObserver(function () { try { paintEditButtons(); } catch (e) {} }).observe(list, { childList: true, subtree: true });
+        new MutationObserver(function () { try { paintEditButtons(); } catch (e) {} try { paintSortButton(); } catch (e) {} }).observe(list, { childList: true, subtree: true });
       } catch (e) {}
       try { paintEditButtons(); } catch (e) {}
+      try { paintSortButton(); } catch (e) {}
     })();
     document.addEventListener("click", function (e) {
       var t = e.target;
@@ -2169,7 +2211,7 @@ const DATA = {"records":[],"monthly":[],"weekly":[]};
 
 /* ===== 工具函数 ===== */
 const $ = id => document.getElementById(id);
-const fmtDate = d => { const [y,m,dd] = d.split("-"); return parseInt(m)+"月"+parseInt(dd)+"日"; };
+const fmtDate = d => { const [y,m,dd] = d.split("-"); return (y ? y+"年" : "")+parseInt(m)+"月"+parseInt(dd)+"日"; };
 const medalType = r => r[4]; // "p" 实体 "v" 虚拟 "" 无
 const recvType = r => r[5]; // "y" "n" ""
 const catOf = r => {
@@ -2317,7 +2359,7 @@ $("rec-search").addEventListener("input", e=>{
 });
 
 function renderRecList(){
-  let list = DATA.records.slice().reverse().map((r,i)=>({r, idx: DATA.records.length-1-i}));
+  let list = DATA.records.map(function (r, i) { return { r: r, idx: i }; }); try { list.sort(function (a, b) { return String(a.r[3] || "").localeCompare(String(b.r[3] || "")); }); if (!(window.__lsSortAsc && window.__lsSortAsc())) { list.reverse(); } } catch (e) {}
   if (curCat !== "all") list = list.filter(x=> catOf(x.r)===curCat);
   if (recSearch){
     list = list.filter(x=> x.r[0].toLowerCase().includes(recSearch) || (x.r[3]||"").includes(recSearch));
