@@ -850,13 +850,38 @@ html, body { max-width: 100%; overflow-x: hidden; }
       return o;
     } catch (e) { return { current: "默认", list: ["默认"] }; }
   }
-  function writeProfiles(o) { try { localStorage.setItem(PROF_KEY, JSON.stringify(o)); } catch (e) {} }
+  function storageAlert(msg) {
+    try {
+      if (sessionStorage.getItem("ls-storage-alert") === "1") { return; }
+      sessionStorage.setItem("ls-storage-alert", "1");
+    } catch (e) {}
+    alert("保存失败：浏览器存储写入不成功。\n\n" + (msg || "") +
+      "\n常见原因与处理：\n" +
+      "1) 存储空间满了 → 左下角 ☰ →「恢复快照（自动备份）」删掉旧快照，或点「数据自检 / 导出全部」先导出备份；\n" +
+      "2) 无痕/隐私模式 → 换普通窗口打开；\n" +
+      "3) 浏览器限制了本站存储 → 到浏览器设置里允许本站保存数据。");
+  }
+  function writeProfiles(o) {
+    try { localStorage.setItem(PROF_KEY, JSON.stringify(o)); return true; }
+    catch (e) { try { trimSnapshots(currentUserSafe(), 0); localStorage.setItem(PROF_KEY, JSON.stringify(o)); return true; } catch (e2) { storageAlert("使用者名单没有保存成功。"); return false; } }
+  }
+  function currentUserSafe() { try { return readProfiles().current; } catch (e) { return "默认"; } }
   function currentUser() { return readProfiles().current; }
   function dataKey() { return BASE_KEY + "::" + currentUser(); }
   function load() { try { var s = localStorage.getItem(dataKey()); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
   function save(db) {
     try { localStorage.setItem(dataKey(), JSON.stringify(db)); return true; }
-    catch (e) { return false; }
+    catch (e) {
+      /* 写不进去：先裁掉旧快照腾空间，再重试一次；仍失败则明确提示 */
+      try {
+        if (typeof trimSnapshots === "function") { trimSnapshots(currentUserSafe(), 0); }
+        localStorage.setItem(dataKey(), JSON.stringify(db));
+        return true;
+      } catch (e2) {
+        if (typeof storageAlert === "function") { storageAlert("这条记录没有保存成功。"); }
+        return false;
+      }
+    }
   }
   function db() {
     var d = load();
@@ -1162,6 +1187,16 @@ html, body { max-width: 100%; overflow-x: hidden; }
         "<b>" + escH(n) + "</b>" + (n === p.current ? " <span style='color:#7fa7ff'>当前</span>" : "") +
         "<div style='color:#8b94a6;font-size:11.5px'>" + (parts.length ? parts.join(" · ") + "（共 " + tot + " 条）" : "无记录") + "</div></div>";
     });
+    var totalBytes = 0;
+    keys.forEach(function (k) { try { totalBytes += (localStorage.getItem(k) || "").length; } catch (e) {} });
+    var snapBytes = 0;
+    keys.forEach(function (k) { if (k.indexOf("mini-apps-snapshots") === 0) { try { snapBytes += (localStorage.getItem(k) || "").length; } catch (e) {} } });
+    html += "<div style='font-size:12.5px;color:#cfe0ff;margin:10px 0 6px'>已用存储约 " +
+      (Math.round(totalBytes / 1024 * 10) / 10) + " KB（其中快照 " + (Math.round(snapBytes / 1024 * 10) / 10) + " KB）；" +
+      "浏览器一般上限 5 MB</div>" +
+      "<div style='display:flex;gap:8px;margin-bottom:8px'>" +
+      "<button id='ls-diag-trim' style='flex:1;padding:9px;border-radius:10px;border:1px solid #5a2a30;background:#2a1a1e;color:#ffb4b4;cursor:pointer'>清理旧快照（保留最新 1 份）</button>" +
+      "</div>";
     html += "<div style='font-size:12.5px;color:#9aa3b2;margin:10px 0 4px'>本机所有数据键</div>";
     keys.forEach(function (k) {
       var c = lsCountOfKey(k);
@@ -1180,6 +1215,16 @@ html, body { max-width: 100%; overflow-x: hidden; }
 
     document.getElementById("ls-diag-x").addEventListener("click", function () { mask.remove(); });
     document.getElementById("ls-diag-close").addEventListener("click", function () { mask.remove(); });
+    var trimBtn = document.getElementById("ls-diag-trim");
+    if (trimBtn) {
+      trimBtn.addEventListener("click", function () {
+        var n = 0;
+        readProfiles().list.forEach(function (u) { n += trimSnapshots(u, 1); });
+        if (currentUserSafe()) { n += trimSnapshots(currentUserSafe(), 1); }
+        toast(n ? ("已清理 " + n + " 份旧快照") : "没有可清理的旧快照");
+        showDiag();
+      });
+    }
     document.getElementById("ls-diag-export").addEventListener("click", function () {
       var dump = {};
       keys.forEach(function (k) { try { dump[k] = JSON.parse(localStorage.getItem(k)); } catch (e) {} });
@@ -1205,10 +1250,27 @@ html, body { max-width: 100%; overflow-x: hidden; }
     catch (e) { return []; }
   }
   function snapPush(u, entry) {
+    var SNAP_BUDGET = 400 * 1024;                       /* 快照总占用上限 400 KB */
+    var sizeOf = function (a) { try { return JSON.stringify(a).length; } catch (e) { return 0; } };
+    if (sizeOf([entry]) > SNAP_BUDGET) { return false; } /* 单份就超大 → 不存快照 */
     var list = snapList(u);
     list.push(entry);
-    if (list.length > SNAP_MAX) { list = list.slice(list.length - SNAP_MAX); }
-    try { localStorage.setItem(snapKeyFor(u), JSON.stringify(list)); return true; } catch (e) { return false; }
+    while (list.length > SNAP_MAX) { list.shift(); }
+    while (list.length > 1 && sizeOf(list) > SNAP_BUDGET) { list.shift(); }
+    try { localStorage.setItem(snapKeyFor(u), JSON.stringify(list)); return true; }
+    catch (e) {
+      list.shift();
+      try { localStorage.setItem(snapKeyFor(u), JSON.stringify(list)); return true; } catch (e2) { return false; }
+    }
+  }
+  /* 腾空间：把某个使用者的快照裁到只剩最新 1 份（甚至清空） */
+  function trimSnapshots(u, keep) {
+    var list = snapList(u);
+    keep = (keep === undefined) ? 1 : keep;
+    if (list.length <= keep) { return 0; }
+    var removed = list.length - keep;
+    try { localStorage.setItem(snapKeyFor(u), JSON.stringify(list.slice(list.length - keep))); } catch (e) {}
+    return removed;
   }
   function snapSignature(o) {
     return JSON.stringify([o && o.records ? o.records : [], (o && o.redeem) || null, (o && o.intervals) || null]);
@@ -1447,32 +1509,6 @@ html, body { max-width: 100%; overflow-x: hidden; }
           "</div>" +
           "<div style='color:#8b94a6;font-size:11.5px;margin-top:6px'>点名字设为默认；再点一次可取消。</div>" +
           
-          "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:6px'>默认打开的使用者" +
-          (o.default ? "：<b style='color:#7fa7ff'>" + escH(o.default) + "</b>（打开页面直接进这个人，不再询问）" : "（未设置，每次打开都会问「你是哪位？」）") +
-          "</div>" +
-          "<div style='display:flex;gap:6px;flex-wrap:wrap'>" +
-          o.list.map(function (n) {
-            var on = (o.default === n);
-            return "<button data-def='" + escH(n) + "' style='padding:7px 11px;border-radius:20px;cursor:pointer;font-size:12.5px;" +
-              "border:1px solid " + (on ? "#3f6ad8" : "#3a445c") + ";background:" + (on ? "#1d2740" : "transparent") +
-              ";color:" + (on ? "#cfe0ff" : "#9aa3b2") + "'>" + escH(n) + (on ? " · 默认" : "") + "</button>";
-          }).join("") +
-          "</div>" +
-          "<div style='color:#8b94a6;font-size:11.5px;margin-top:6px'>点名字设为默认；再点一次可取消。</div>" +
-          
-          "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:6px'>默认打开的使用者" +
-          (o.default ? "：<b style='color:#7fa7ff'>" + escH(o.default) + "</b>（打开页面直接进这个人，不再询问）" : "（未设置，每次打开都会问「你是哪位？」）") +
-          "</div>" +
-          "<div style='display:flex;gap:6px;flex-wrap:wrap'>" +
-          o.list.map(function (n) {
-            var on = (o.default === n);
-            return "<button data-def='" + escH(n) + "' style='padding:7px 11px;border-radius:20px;cursor:pointer;font-size:12.5px;" +
-              "border:1px solid " + (on ? "#3f6ad8" : "#3a445c") + ";background:" + (on ? "#1d2740" : "transparent") +
-              ";color:" + (on ? "#cfe0ff" : "#9aa3b2") + "'>" + escH(n) + (on ? " · 默认" : "") + "</button>";
-          }).join("") +
-          "</div>" +
-          "<div style='color:#8b94a6;font-size:11.5px;margin-top:6px'>点名字设为默认；再点一次可取消。</div>" +
-          
           "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:6px'>新建使用者（名字建议用笔名/网名，别用真实姓名）</div>" +
           "<div style='display:flex;gap:6px'>" +
           "<input id='ls-users-new' placeholder='输入名字' style='flex:1;min-width:0;padding:10px;border-radius:10px;" +
@@ -1530,10 +1566,25 @@ html, body { max-width: 100%; overflow-x: hidden; }
       if (add) {
         add.addEventListener("click", function () {
           var inp = document.getElementById("ls-users-new");
-          var name = inp ? inp.value.trim() : "";
+          var name = (inp ? inp.value : "").trim().slice(0, 20);
           if (!name) { toast("请先输入名字"); return; }
-          switchUser(name);
-          mask.remove();
+          var o = readProfiles();
+          if (o.list.indexOf(name) < 0) { o.list.push(name); }
+          o.current = name;
+          writeProfiles(o);
+          /* 写回校验：确认真写进去了 */
+          var back = readProfiles();
+          if (back.list.indexOf(name) < 0) {
+            toast("保存失败：没能写入，请检查是否无痕模式或存储已满");
+            storageAlert("新建使用者「" + name + "」没有保存成功。");
+            return;
+          }
+          try { sessionStorage.setItem("ls-picked", "1"); } catch (e) {}
+          if (inp) { inp.value = ""; }
+          toast("已新建并切到：" + name + "（可点上面的「设为默认」）");
+          refresh();
+          updateUserLabel();
+          render();          /* 保持弹窗打开，能立刻看到名字出现 */
         });
       }
     }
@@ -1744,6 +1795,72 @@ html, body { max-width: 100%; overflow-x: hidden; }
     document.body.appendChild(wrap);
     updateUserLabel();
     maybeAskWho();
+    try { snapSave("打开页面自动备份"); } catch (e) {}
+    [600, 1500, 3000].forEach(function (ms) { setTimeout(function () { try { paintEditButtons(); } catch (e) {} }, ms); });
+    document.addEventListener("click", function (e) {
+      var t = e.target;
+      if (t && t.getAttribute && t.getAttribute("data-lsedit") !== null && t.getAttribute("data-lsedit") !== undefined && t.getAttribute("data-lsedit") !== "") {
+        e.stopPropagation(); e.preventDefault();
+        try { editRecord(Number(t.getAttribute("data-lsedit"))); } catch (err) { toast("打不开编辑器" + (err && err.message ? "：" + err.message : "")); }
+      }
+    }, true);
+
+    setTimeout(function () { try { snapSave("打开页面自动备份"); } catch (e) {} }, 2500);
+    try { snapSave("打开页面自动备份"); } catch (e) {}
+    [600, 1500, 3000].forEach(function (ms) { setTimeout(function () { try { paintEditButtons(); } catch (e) {} }, ms); });
+    document.addEventListener("click", function (e) {
+      var t = e.target;
+      if (t && t.getAttribute && t.getAttribute("data-lsedit") !== null && t.getAttribute("data-lsedit") !== undefined && t.getAttribute("data-lsedit") !== "") {
+        e.stopPropagation(); e.preventDefault();
+        try { editRecord(Number(t.getAttribute("data-lsedit"))); } catch (err) { toast("打不开编辑器" + (err && err.message ? "：" + err.message : "")); }
+      }
+    }, true);
+
+    setTimeout(function () { try { snapSave("打开页面自动备份"); } catch (e) {} }, 2500);
+    try { snapSave("打开页面自动备份"); } catch (e) {}
+    [600, 1500, 3000].forEach(function (ms) { setTimeout(function () { try { paintEditButtons(); } catch (e) {} }, ms); });
+    document.addEventListener("click", function (e) {
+      var t = e.target;
+      if (t && t.getAttribute && t.getAttribute("data-lsedit") !== null && t.getAttribute("data-lsedit") !== undefined && t.getAttribute("data-lsedit") !== "") {
+        e.stopPropagation(); e.preventDefault();
+        try { editRecord(Number(t.getAttribute("data-lsedit"))); } catch (err) { toast("打不开编辑器" + (err && err.message ? "：" + err.message : "")); }
+      }
+    }, true);
+
+    setTimeout(function () { try { snapSave("打开页面自动备份"); } catch (e) {} }, 2500);
+    try { snapSave("打开页面自动备份"); } catch (e) {}
+    [600, 1500, 3000].forEach(function (ms) { setTimeout(function () { try { paintEditButtons(); } catch (e) {} }, ms); });
+    document.addEventListener("click", function (e) {
+      var t = e.target;
+      if (t && t.getAttribute && t.getAttribute("data-lsedit") !== null && t.getAttribute("data-lsedit") !== undefined && t.getAttribute("data-lsedit") !== "") {
+        e.stopPropagation(); e.preventDefault();
+        try { editRecord(Number(t.getAttribute("data-lsedit"))); } catch (err) { toast("打不开编辑器" + (err && err.message ? "：" + err.message : "")); }
+      }
+    }, true);
+
+    setTimeout(function () { try { snapSave("打开页面自动备份"); } catch (e) {} }, 2500);
+    try { snapSave("打开页面自动备份"); } catch (e) {}
+    [600, 1500, 3000].forEach(function (ms) { setTimeout(function () { try { paintEditButtons(); } catch (e) {} }, ms); });
+    document.addEventListener("click", function (e) {
+      var t = e.target;
+      if (t && t.getAttribute && t.getAttribute("data-lsedit") !== null && t.getAttribute("data-lsedit") !== undefined && t.getAttribute("data-lsedit") !== "") {
+        e.stopPropagation(); e.preventDefault();
+        try { editRecord(Number(t.getAttribute("data-lsedit"))); } catch (err) { toast("打不开编辑器" + (err && err.message ? "：" + err.message : "")); }
+      }
+    }, true);
+
+    setTimeout(function () { try { snapSave("打开页面自动备份"); } catch (e) {} }, 2500);
+    try { snapSave("打开页面自动备份"); } catch (e) {}
+    [600, 1500, 3000].forEach(function (ms) { setTimeout(function () { try { paintEditButtons(); } catch (e) {} }, ms); });
+    document.addEventListener("click", function (e) {
+      var t = e.target;
+      if (t && t.getAttribute && t.getAttribute("data-lsedit") !== null && t.getAttribute("data-lsedit") !== undefined && t.getAttribute("data-lsedit") !== "") {
+        e.stopPropagation(); e.preventDefault();
+        try { editRecord(Number(t.getAttribute("data-lsedit"))); } catch (err) { toast("打不开编辑器" + (err && err.message ? "：" + err.message : "")); }
+      }
+    }, true);
+
+    setTimeout(function () { try { snapSave("打开页面自动备份"); } catch (e) {} }, 2500);
     try { snapSave("打开页面自动备份"); } catch (e) {}
     [600, 1500, 3000].forEach(function (ms) { setTimeout(function () { try { paintEditButtons(); } catch (e) {} }, ms); });
     document.addEventListener("click", function (e) {
