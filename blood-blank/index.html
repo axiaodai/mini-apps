@@ -979,7 +979,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
   /* ---------- 使用者（本地多用户隔离） ---------- */
   function readProfiles() {
     try {
-      var o = JSON.parse(localStorage.getItem(PROF_KEY) || "null");
+      var o = JSON.parse(safeGet(PROF_KEY) || "null");
       if (!o || !Array.isArray(o.list) || !o.list.length) { o = { current: "默认", list: ["默认"] }; }
       if (o.list.indexOf(o.current) < 0) { o.current = o.list[0]; }
       return o;
@@ -1072,7 +1072,174 @@ html, body { max-width: 100%; overflow-x: hidden; }
     f.click();
   }
     window.__lsMigrate = { apply: applyFullDump, pick: migrateFromFile };
+  /* ---- 多层存储兜底（localStorage 不可靠时用 Cookie / sessionStorage / IndexedDB 兜）---- */
+  var MIRROR_COOKIE = "lsm";
+  var MIRROR_COOKIE_MAX = 3500;          /* Cookie 只装小数据（使用者名单、配置） */
+
+  function cookieParts() {
+    var out = {};
+    try {
+      (document.cookie || "").split(";").forEach(function (kv) {
+        var i = kv.indexOf("=");
+        if (i > 0) {
+          var k = kv.slice(0, i).trim();
+          if (k === MIRROR_COOKIE) {
+            try { out = JSON.parse(decodeURIComponent(kv.slice(i + 1)) || "{}"); } catch (e) { out = {}; }
+          }
+        }
+      });
+    } catch (e) {}
+    return out;
+  }
+  function cookieSet(key, val) {
+    try {
+      var all = cookieParts();
+      all[key] = val;
+      var blob = JSON.stringify(all);
+      if (blob.length > MIRROR_COOKIE_MAX) {
+        /* 太大：只保留最小的几个（使用者名单最关键） */
+        var keys = Object.keys(all).sort(function (a, b) { return String(all[a]).length - String(all[b]).length; });
+        var keep = {};
+        for (var i = 0; i < keys.length; i++) {
+          keep[keys[i]] = all[keys[i]];
+          if (JSON.stringify(keep).length > MIRROR_COOKIE_MAX) { delete keep[keys[i]]; break; }
+        }
+        all = keep;
+        blob = JSON.stringify(all);
+      }
+      document.cookie = MIRROR_COOKIE + "=" + encodeURIComponent(blob) + ";path=/;max-age=31536000;SameSite=Lax";
+      return true;
+    } catch (e) { return false; }
+  }
+  function cookieGet(key) { var all = cookieParts(); return all.hasOwnProperty(key) ? all[key] : null; }
+
+  /* IndexedDB（异步，用于大数据镜像） */
+  var _idb = null;
+  function idbOpen(cb) {
+    if (_idb) { cb(_idb); return; }
+    try {
+      if (!window.indexedDB) { cb(null); return; }
+      var req = indexedDB.open("mini-apps-mirror", 1);
+      req.onupgradeneeded = function () { try { req.result.createObjectStore("kv"); } catch (e) {} };
+      req.onsuccess = function () { _idb = req.result; cb(_idb); };
+      req.onerror = function () { cb(null); };
+    } catch (e) { cb(null); }
+  }
+  function idbSet(key, val) {
+    idbOpen(function (db) {
+      if (!db) { return; }
+      try {
+        var tx = db.transaction("kv", "readwrite");
+        tx.objectStore("kv").put(val, key);
+      } catch (e) {}
+    });
+  }
+  function idbGet(key, cb) {
+    idbOpen(function (db) {
+      if (!db) { cb(null); return; }
+      try {
+        var r = db.transaction("kv", "readonly").objectStore("kv").get(key);
+        r.onsuccess = function () { cb(r.result === undefined ? null : r.result); };
+        r.onerror = function () { cb(null); };
+      } catch (e) { cb(null); }
+    });
+  }
+  function idbAll(cb) {
+    idbOpen(function (db) {
+      if (!db) { cb({}); return; }
+      try {
+        var out = {}, st = db.transaction("kv", "readonly").objectStore("kv");
+        var req = st.openCursor();
+        req.onsuccess = function (e) {
+          var c = e.target.result;
+          if (c) { out[c.key] = c.value; c.continue(); } else { cb(out); }
+        };
+        req.onerror = function () { cb({}); };
+      } catch (e) { cb({}); }
+    });
+  }
+
+  /* 统一读写：写 = localStorage + sessionStorage + Cookie + IndexedDB 四份 */
+  var __lsMem = {};
+  function safeSet(key, val) {
+    __lsMem[key] = val;
+    var ok = false;
+    try { localStorage.setItem(key, val); ok = true; } catch (e) {}
+    try { sessionStorage.setItem(key, val); } catch (e) {}
+    try { cookieSet(key, val); } catch (e) {}
+    try { idbSet(key, val); } catch (e) {}
+    return ok;
+  }
+  function safeGet(key) {
+    var v = null;
+    try { v = localStorage.getItem(key); } catch (e) {}
+    if (v === null || v === undefined) { try { v = sessionStorage.getItem(key); } catch (e) {} }
+    if (v === null || v === undefined) { try { v = cookieGet(key); } catch (e) {} }
+    if (v === null || v === undefined) { v = Object.prototype.hasOwnProperty.call(__lsMem, key) ? __lsMem[key] : null; }
+    if (v !== null && v !== undefined) {
+      try { if (localStorage.getItem(key) !== v) { localStorage.setItem(key, v); } } catch (e) {}
+    }
+    return (v === undefined) ? null : v;
+  }
+  function safeRemove(key) {
+    try { localStorage.removeItem(key); } catch (e) {}
+    try { sessionStorage.removeItem(key); } catch (e) {}
+    try {
+      var all = cookieParts();
+      if (all.hasOwnProperty(key)) { delete all[key]; document.cookie = MIRROR_COOKIE + "=" + encodeURIComponent(JSON.stringify(all)) + ";path=/;max-age=31536000;SameSite=Lax"; }
+    } catch (e) {}
+  }
+
+  /* 备用存储恢复：localStorage 丢了 → 从 sessionStorage / Cookie / IndexedDB 找回 */
+  function mirrorRestore(done) {
+    var restored = [];
+    /* 同步源 */
+    ["mini-apps-profiles-v1", dataKeySafe()].forEach(function (k) {
+      if (!k) { return; }
+      var cur = null;
+      try { cur = localStorage.getItem(k); } catch (e) {}
+      if (cur) { return; }
+      var alt = null;
+      try { alt = sessionStorage.getItem(k); } catch (e) {}
+      if (!alt) { alt = cookieGet(k); }
+      if (alt) { try { localStorage.setItem(k, alt); restored.push(k); } catch (e) {} }
+    });
+    /* 异步源：IndexedDB */
+    idbAll(function (all) {
+      Object.keys(all).forEach(function (k) {
+        if (k.indexOf("mini-apps-") !== 0) { return; }
+        var cur = null;
+        try { cur = localStorage.getItem(k); } catch (e) {}
+        __lsMem[k] = all[k];
+        if (cur) { return; }
+        try { localStorage.setItem(k, all[k]); } catch (e) {}
+        restored.push(k);
+      });
+      if (restored.length) {
+        try { toast("已从备用存储恢复 " + restored.length + " 项数据"); } catch (e) {}
+        try { if (typeof initData === "function") { initData(); } else { refresh(); } } catch (e) {}
+        try { updateUserLabel(); } catch (e) {}
+      }
+      if (done) { done(restored); }
+    });
+  }
+  function dataKeySafe() { try { return BASE_KEY + "::" + readProfiles().current; } catch (e) { return null; } }
+
+  /* 存储自检：四层是否可用、能否写后读回 */
+  function storageSelfTest() {
+    var stamp = "probe-" + Date.now();
+    var r = { ls: "-", lsBack: "-", ss: "-", ck: "-", idb: "-" };
+    try { localStorage.setItem("__ls_probe__", stamp); r.ls = "ok"; r.lsBack = (localStorage.getItem("__ls_probe__") === stamp) ? "ok" : "read-fail"; localStorage.removeItem("__ls_probe__"); }
+    catch (e) { r.ls = "fail:" + (e && e.name); }
+    try { sessionStorage.setItem("__ls_probe__", stamp); r.ss = (sessionStorage.getItem("__ls_probe__") === stamp) ? "ok" : "read-fail"; sessionStorage.removeItem("__ls_probe__"); } catch (e) { r.ss = "fail"; }
+    try { cookieSet("__ls_probe__", stamp); r.ck = (cookieGet("__ls_probe__") === stamp) ? "ok" : "read-fail"; } catch (e) { r.ck = "fail"; }
+    r.idb = window.indexedDB ? "pending" : "none";
+    return r;
+  }
+
+  window.__lsMirror = { set: safeSet, get: safeGet, restore: mirrorRestore, test: storageSelfTest, cookie: cookieParts };
   function storageAlert(msg) {
+
     try {
       if (sessionStorage.getItem("ls-storage-alert") === "1") { return; }
       sessionStorage.setItem("ls-storage-alert", "1");
@@ -1084,15 +1251,15 @@ html, body { max-width: 100%; overflow-x: hidden; }
       "3) 浏览器限制了本站存储 → 到浏览器设置里允许本站保存数据。");
   }
   function writeProfiles(o) {
-    try { localStorage.setItem(PROF_KEY, JSON.stringify(o)); return true; }
+    try { return safeSet(PROF_KEY, JSON.stringify(o)); }
     catch (e) { try { freeSnapshotSpace(); localStorage.setItem(PROF_KEY, JSON.stringify(o)); return true; } catch (e2) { storageAlert("使用者名单没有保存成功。"); return false; } }
   }
   function currentUserSafe() { try { return readProfiles().current; } catch (e) { return "默认"; } }
   function currentUser() { return readProfiles().current; }
   function dataKey() { return BASE_KEY + "::" + currentUser(); }
-  function load() { try { var s = localStorage.getItem(dataKey()); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
+  function load() { try { var s = safeGet(dataKey()); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
   function save(db) {
-    try { localStorage.setItem(dataKey(), JSON.stringify(db)); return true; }
+    try { return safeSet(dataKey(), JSON.stringify(db)); }
     catch (e) {
       /* 写不进去：先裁掉旧快照腾空间，再重试一次；仍失败则明确提示 */
       try {
@@ -1906,6 +2073,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
     document.body.appendChild(wrap);
     updateUserLabel();
     maybeAskWho();
+    try { setTimeout(function () { mirrorRestore(); }, 900); } catch (e) {}
     try { freeSnapshotSpace(); } catch (e) {}
     document.addEventListener("click", function (e) {
       var t = e.target;
