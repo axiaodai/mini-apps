@@ -1439,16 +1439,23 @@ html, body { max-width: 100%; overflow-x: hidden; }
         "<b>" + escH(n) + "</b>" + (n === p.current ? " <span style='color:#7fa7ff'>当前</span>" : "") +
         "<div style='color:#8b94a6;font-size:11.5px'>" + (parts.length ? parts.join(" · ") + "（共 " + tot + " 条）" : "无记录") + "</div></div>";
     });
+    var _st = storageSelfTest();
+    html += "<div style='font-size:12.5px;color:#9aa3b2;margin:10px 0 4px'>存储自检（本机浏览器）</div>" +
+      "<div style='border:1px solid #2a3040;border-radius:10px;padding:8px;background:#1b2130;font-size:11.5px;color:#c8cfda'>" +
+      "localStorage：" + _st.ls + (_st.lsBack === "ok" ? "（写后读回正常）" : "（写后读不回！）") + "<br>" +
+      "sessionStorage：" + _st.ss + "　Cookie：" + _st.ck + "　IndexedDB：" + _st.idb +
+      "<div style='color:#8b94a6;margin-top:4px'>任意一层正常，数据就有兜底。若 localStorage 显示 fail / 读不回，" +
+      "请到浏览器设置里允许本站保存数据，并关闭无痕模式。</div></div>";
     var totalBytes = 0;
     keys.forEach(function (k) { try { totalBytes += (localStorage.getItem(k) || "").length; } catch (e) {} });
     var snapBytes = 0;
     keys.forEach(function (k) { if (k.indexOf("mini-apps-snapshots") === 0) { try { snapBytes += (localStorage.getItem(k) || "").length; } catch (e) {} } });
     html += "<div style='font-size:12.5px;color:#cfe0ff;margin:10px 0 6px'>已用存储约 " +
-      (Math.round(totalBytes / 1024 * 10) / 10) + " KB（其中快照 " + (Math.round(snapBytes / 1024 * 10) / 10) + " KB）；" +
+      (Math.round(totalBytes / 1024 * 10) / 10) + " KB；" +
       "浏览器一般上限 5 MB</div>" +
       "<div style='display:flex;gap:8px;margin-bottom:8px'>" +
       "<button id='ls-diag-mig' style='flex:1;padding:9px;border-radius:10px;border:1px solid #2c4a86;background:#1b2e52;color:#cfe0ff;cursor:pointer'>整机迁移 / 恢复全部</button>" +
-      "<button id='ls-diag-trim' style='flex:1;padding:9px;border-radius:10px;border:1px solid #5a2a30;background:#2a1a1e;color:#ffb4b4;cursor:pointer'>清理历史快照数据（腾空间）</button>" +
+      "<button id='ls-diag-trim' style='flex:1;padding:9px;border-radius:10px;border:1px solid #5a2a30;background:#2a1a1e;color:#ffb4b4;cursor:pointer'>清理历史残留数据（腾空间）</button>" +
       "</div>";
     html += "<div style='font-size:12.5px;color:#9aa3b2;margin:10px 0 4px'>本机所有数据键</div>";
     keys.forEach(function (k) {
