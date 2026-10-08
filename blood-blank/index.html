@@ -2594,6 +2594,15 @@ html, body { max-width: 100%; overflow-x: hidden; }
     panel.appendChild(btn("使用者：" + currentUser(), function () { showUserManager(); }, "ls-user"));
         panel.appendChild(btn("数据自检 / 导出全部", function () { showDiag(); }, "ls-diag-btn"));
     panel.appendChild(btn("整机迁移（从别的浏览器搬数据）", function () { migrateFromFile(); }, "ls-migrate"));
+    panel.appendChild(btn("多设备同步（同步码）", function () { showSync(); }, "ls-sync-btn"));
+    panel.appendChild(btn("NAS 同步（多设备互通）", function () { showNas(); }, "ls-nas-btn"));
+    (function () {
+      var v = document.createElement("div");
+      v.id = "ls-version";
+      v.style.cssText = "margin-top:10px;padding-top:8px;border-top:1px solid #2a3040;font-size:11px;color:#8b94a6;text-align:center;line-height:1.6";
+      v.textContent = "版本 2026-10-08e · 含 NAS 同步";
+      panel.appendChild(v);
+    })();
     function exportBackup() {
       var payload = db();
       /* 页面附加数据（如献血页的积分兑换记录）一并导出 */
