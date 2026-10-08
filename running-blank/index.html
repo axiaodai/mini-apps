@@ -838,6 +838,16 @@ html, body { max-width: 100%; overflow-x: hidden; }
 
 
 
+
+
+
+
+
+
+
+
+
+
 <script>/* ==== 本地存储代理（公开版：不连服务器 · 按使用者隔离） ====
    这些页面原本调用 NAS 上的 /api/*；公开版改为读写浏览器本地存储。
    同一台设备上可以有多位使用者，各自的数据互不可见。
@@ -1144,7 +1154,243 @@ html, body { max-width: 100%; overflow-x: hidden; }
     return r;
   }
 
+  window.__lsSync = { make: syncMakeSync, encode: syncEncode, decode: syncDecode, apply: syncApply, show: showSync };
   window.__lsMirror = { set: safeSet, get: safeGet, restore: mirrorRestore, test: storageSelfTest, cookie: cookieParts };
+  /* ---- 多设备同步：同步码 ---- */
+  var SYNC_PREFIX = "LS1:";      /* 压缩过 */
+  var SYNC_PLAIN = "LS0:";       /* 未压缩（浏览器不支持压缩时） */
+
+  function b64encode(str) {
+    try { return btoa(unescape(encodeURIComponent(str))); } catch (e) { return null; }
+  }
+  function b64decode(b64) {
+    try { return decodeURIComponent(escape(atob(b64))); } catch (e) { return null; }
+  }
+  function syncPayloadKeys(user) {
+    return ["mini-apps-blood-v1::" + user, "mini-apps-running-v1::" + user,
+            "mini-apps-blood-redeem-v1::" + user, "mini-apps-blood-intervals-v1::" + user];
+  }
+  function syncMakeSync(user) {
+    var u = user || currentUser();
+    var d = {};
+    syncPayloadKeys(u).forEach(function (k) {
+      try { var v = safeGet(k); if (v) { d[k] = JSON.parse(v); } } catch (e) {}
+    });
+    var one = { v: 1, u: u, t: Date.now(), keys: Object.keys(d), d: d };
+    /* 也带上使用者名单，方便新设备直接出现这个人 */
+    try { var p = readProfiles(); one.list = p.list; one.default = p.default || null; } catch (e) {}
+    return JSON.stringify(one);
+  }
+  function syncEncode(user) {
+    return new Promise(function (resolve) {
+      var raw = syncMakeSync(user);
+      var done = function (s) { resolve(s ? SYNC_PREFIX + s : null); };
+      try {
+        if (typeof CompressionStream !== "undefined") {
+          var cs = new CompressionStream("deflate-raw");
+          var w = cs.writable.getWriter();
+          w.write(new TextEncoder().encode(raw)); w.close();
+          new Response(cs.readable).arrayBuffer().then(function (buf) {
+            var bytes = new Uint8Array(buf), bin = "";
+            for (var i = 0; i < bytes.length; i++) { bin += String.fromCharCode(bytes[i]); }
+            done(btoa(bin));
+          }).catch(function () { done(b64encode(raw)); });
+        } else { done(b64encode(raw)); }
+      } catch (e) { done(b64encode(raw)); }
+    });
+  }
+  function syncDecode(code) {
+    return new Promise(function (resolve) {
+      var s = String(code || "").replace(/\s+/g, "");
+      if (!s) { resolve(null); return; }
+      var finish = function (raw) {
+        if (!raw) { resolve(null); return; }
+        try { resolve(JSON.parse(raw)); } catch (e) { resolve(null); }
+      };
+      if (s.indexOf(SYNC_PREFIX) === 0) {
+        try {
+          var bin = atob(s.slice(SYNC_PREFIX.length));
+          var bytes = new Uint8Array(bin.length);
+          for (var i = 0; i < bin.length; i++) { bytes[i] = bin.charCodeAt(i); }
+          if (typeof DecompressionStream === "undefined") { resolve(null); return; }
+          var ds = new DecompressionStream("deflate-raw");
+          var w = ds.writable.getWriter();
+          w.write(bytes); w.close();
+          new Response(ds.readable).text().then(finish).catch(function () { resolve(null); });
+        } catch (e) { resolve(null); }
+      } else if (s.indexOf(SYNC_PLAIN) === 0) {
+        finish(b64decode(s.slice(SYNC_PLAIN.length)));
+      } else {
+        /* 也接受直接粘贴的明文 JSON（旧版导出片段） */
+        try { resolve(JSON.parse(s)); } catch (e) { resolve(null); }
+      }
+    });
+  }
+  function recKey(r) {
+    if (!r || !r.length) { return ""; }
+    /* 记录特征：日期+类型+血量+地点+备注（跑步则用名称+日期+公里+用时+备注） */
+    if (document.getElementById("f-amount")) {
+      return [r[0], r[1], r[2], r[4], r[6]].join("|");
+    }
+    return [r[0], r[3], r[1], r[2], r[8]].join("|");
+  }
+  function unionRecords(a, b) {
+    var out = [], seen = {};
+    (a || []).concat(b || []).forEach(function (r) {
+      var k = recKey(r);
+      if (!k) { return; }
+      if (seen[k]) { return; }
+      seen[k] = 1; out.push(r);
+    });
+    /* 按日期排序，保持稳定 */
+    try { out.sort(function (x, y) { return String(x[0] || x[3] || "").localeCompare(String(y[0] || y[3] || "")); }); } catch (e) {}
+    return out;
+  }
+  function unionRows(a, b) {
+    var out = [], seen = {};
+    (a || []).concat(b || []).forEach(function (r) {
+      var k = JSON.stringify(r);
+      if (seen[k]) { return; }
+      seen[k] = 1; out.push(r);
+    });
+    return out;
+  }
+  function syncApply(one, mode) {
+    if (!one || !one.d) { return { ok: false, msg: "同步码读不出来，可能复制不完整" }; }
+    var u = one.u || currentUser();
+    /* 使用者名单：本机没有就补上 */
+    var added = false;
+    try {
+      var p = readProfiles();
+      if (p.list.indexOf(u) < 0) { p.list.push(u); added = true; }
+      if (one.default && p.list.indexOf(one.default) >= 0 && !p.default) { p.default = one.default; }
+      writeProfiles(p);
+    } catch (e) {}
+    var merged = 0, replaced = 0;
+    Object.keys(one.d).forEach(function (k) {
+      var theirs = one.d[k];
+      if (!k) { return; }
+      if (/redeem-v1::/.test(k)) {
+        var mine = [];
+        try { mine = JSON.parse(safeGet(k) || "[]"); } catch (e) {}
+        var val = (mode === "theirs") ? theirs : unionRows(mine, theirs);
+        safeSet(k, JSON.stringify(val));
+        if (mode !== "theirs") { merged++; }
+        return;
+      }
+      if (/intervals-v1::/.test(k)) {
+        /* 配置：本机没有才用对方的（避免覆盖你在这台设备上的设置） */
+        var cur = null;
+        try { cur = safeGet(k); } catch (e) {}
+        if (!cur) { safeSet(k, JSON.stringify(theirs)); merged++; }
+        else if (mode === "theirs") { safeSet(k, JSON.stringify(theirs)); replaced++; }
+        return;
+      }
+      /* 记录型 */
+      var mineRecs = [];
+      try { mineRecs = (JSON.parse(safeGet(k) || "{}").records) || []; } catch (e) {}
+      var theirRecs = (theirs && theirs.records) || [];
+      var val = (mode === "theirs") ? theirRecs : unionRecords(mineRecs, theirRecs);
+      safeSet(k, JSON.stringify({ records: val }));
+      if (mode === "theirs") { replaced++; } else { merged++; }
+    });
+    try { if (typeof initData === "function") { initData(); } else { refresh(); } } catch (e) {}
+    try { updateUserLabel(); } catch (e) {}
+    return { ok: true, user: u, merged: merged, replaced: replaced, added: added };
+  }
+
+  /* ---- 同步码弹窗 ---- */
+  function syncIn(textValue) {
+    var val = document.getElementById(textValue);
+    return val ? val.value.trim() : "";
+  }
+  function showSync() {
+    var old = document.getElementById("ls-sync");
+    if (old && old.parentNode) { old.parentNode.removeChild(old); }
+    var mask = document.createElement("div");
+    mask.id = "ls-sync";
+    mask.style.cssText = "position:fixed;inset:0;z-index:86;background:rgba(8,10,14,.72);display:flex;align-items:center;justify-content:center;padding:18px";
+    mask.addEventListener("click", function (e) { if (e.target === mask) { mask.remove(); } });
+    var card = document.createElement("div");
+    card.style.cssText = "background:#171a21;border:1px solid #2a3040;border-radius:14px;padding:16px;max-width:400px;width:100%;" +
+      "max-height:88vh;overflow-y:auto;color:#e6e8ee;font:13px/1.7 -apple-system,'Microsoft YaHei',sans-serif";
+    card.innerHTML =
+      "<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:4px'>" +
+      "<div style='font-size:16px;font-weight:600'>多设备同步（同步码）</div>" +
+      "<button id='ls-sync-x' style='background:none;border:none;color:#9aa3b2;font-size:22px;cursor:pointer'>×</button></div>" +
+      "<div style='color:#9aa3b2;font-size:12.5px;margin-bottom:10px'>当前使用者：<b style='color:#cfe0ff'>" + escH(currentUser()) + "</b><br>" +
+      "手机上不用传文件：<b style='color:#cfe0ff'>A 设备生成 → 微信发给自己 → B 设备粘贴</b>。</div>" +
+      "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>① 在这台设备生成</div>" +
+      "<textarea id='ls-sync-out' readonly placeholder='点下面的按钮生成…' style='width:100%;box-sizing:border-box;height:88px;padding:9px;" +
+      "border-radius:10px;border:1px solid #2a3040;background:#12151c;color:#cfe0ff;font-size:11px;font-family:monospace'></textarea>" +
+      "<div style='display:flex;gap:8px;margin:8px 0 14px'>" +
+      "<button id='ls-sync-gen' style='flex:1;padding:10px;border-radius:10px;border:1px solid #2c4a86;background:#1b2e52;color:#cfe0ff;cursor:pointer'>生成同步码</button>" +
+      "<button id='ls-sync-copy' style='flex:1;padding:10px;border-radius:10px;border:1px solid #2a3040;background:#1b2130;color:#dfe6ef;cursor:pointer'>复制</button></div>" +
+      "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>② 在另一台设备粘贴</div>" +
+      "<textarea id='ls-sync-in' placeholder='把同步码粘贴到这里…' style='width:100%;box-sizing:border-box;height:88px;padding:9px;" +
+      "border-radius:10px;border:1px solid #2a3040;background:#12151c;color:#e6e8ee;font-size:11px;font-family:monospace'></textarea>" +
+      "<div style='display:flex;gap:8px;margin:8px 0 4px'>" +
+      "<button id='ls-sync-merge' style='flex:1.4;padding:11px;border-radius:10px;border:none;background:#1f6f4a;color:#fff;font-weight:700;cursor:pointer'>合并到本机（推荐）</button>" +
+      "<button id='ls-sync-over' style='flex:1;padding:11px;border-radius:10px;border:1px solid #5a2a30;background:#2a1a1e;color:#ffb4b4;cursor:pointer'>覆盖本机</button></div>" +
+      "<div style='color:#8b94a6;font-size:11.5px'>合并＝两边的记录求并集（重复的自动去掉，各自新增都不丢）；" +
+      "覆盖＝完全以同步码为准。提醒设置只在本机没有时才采用对方的。</div>" +
+      "<div id='ls-sync-msg' style='margin-top:8px;font-size:12.5px;color:#9fd0ff'></div>";
+    mask.appendChild(card);
+    document.body.appendChild(mask);
+    try { if (window.__lsTools && window.__lsTools.close) { window.__lsTools.close(); } } catch (e) {}
+    function msg(t, ok) {
+      var el = document.getElementById("ls-sync-msg");
+      if (el) { el.style.color = ok ? "#8fe3a8" : "#ffb4b4"; el.textContent = t; }
+    }
+    document.getElementById("ls-sync-x").addEventListener("click", function () { mask.remove(); });
+    document.getElementById("ls-sync-gen").addEventListener("click", function () {
+      msg("正在生成…");
+      syncEncode(currentUser()).then(function (code) {
+        var out = document.getElementById("ls-sync-out");
+        if (!code) { msg("生成失败，请重试"); return; }
+        out.value = code;
+        msg("已生成，长度 " + code.length + " 个字符 —— 复制后发给自己");
+      });
+    });
+    document.getElementById("ls-sync-copy").addEventListener("click", function () {
+      var out = document.getElementById("ls-sync-out");
+      if (!out.value) { msg("先点「生成同步码」"); return; }
+      out.select();
+      var ok = false;
+      try { ok = document.execCommand("copy"); } catch (e) {}
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(out.value).then(function () { msg("已复制到剪贴板", true); },
+          function () { msg(ok ? "已复制" : "复制失败：请长按文本框手动复制"); });
+      } else { msg(ok ? "已复制" : "复制失败：请长按文本框手动复制"); }
+    });
+    document.getElementById("ls-sync-merge").addEventListener("click", function () { doApply("merge"); });
+    document.getElementById("ls-sync-over").addEventListener("click", function () {
+      var btn = this;
+      if (btn.getAttribute("data-armed") !== "1") {
+        btn.setAttribute("data-armed", "1");
+        btn.textContent = "再点一次确认覆盖";
+        msg("覆盖会丢弃本机现有记录，再点一次确认");
+        return;
+      }
+      btn.removeAttribute("data-armed");
+      btn.textContent = "覆盖本机";
+      doApply("theirs");
+    });
+    function doApply(mode) {
+      var code = syncIn("ls-sync-in");
+      if (!code) { msg("请先粘贴同步码"); return; }
+      msg("正在解析…");
+      syncDecode(code).then(function (one) {
+        if (!one) { msg("同步码读不出来：可能复制不完整，请重新复制整段"); return; }
+        var r = syncApply(one, mode);
+        if (!r.ok) { msg(r.msg); return; }
+        msg((mode === "theirs" ? "已按同步码覆盖" : "已合并") + "：使用者「" + r.user + "」" +
+            (r.added ? "（本机新建）" : "") + "，" + (mode === "theirs" ? ("更新 " + r.replaced + " 项") : ("合并 " + r.merged + " 项")) +
+            "。切到该使用者查看即可。", true);
+      });
+    }
+  }
+
   function storageAlert(msg) {
 
     try {
@@ -1500,6 +1746,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
       (Math.round(totalBytes / 1024 * 10) / 10) + " KB；" +
       "浏览器一般上限 5 MB</div>" +
       "<div style='display:flex;gap:8px;margin-bottom:8px'>" +
+      "<button id='ls-diag-sync' style='flex:1;padding:9px;border-radius:10px;border:1px solid #2c4a86;background:#1b2e52;color:#cfe0ff;cursor:pointer'>多设备同步（同步码）</button>" +
       "<button id='ls-diag-mig' style='flex:1;padding:9px;border-radius:10px;border:1px solid #2c4a86;background:#1b2e52;color:#cfe0ff;cursor:pointer'>整机迁移 / 恢复全部</button>" +
       "<button id='ls-diag-trim' style='flex:1;padding:9px;border-radius:10px;border:1px solid #5a2a30;background:#2a1a1e;color:#ffb4b4;cursor:pointer'>清理历史残留数据（腾空间）</button>" +
       "</div>";
@@ -1529,7 +1776,9 @@ html, body { max-width: 100%; overflow-x: hidden; }
         });
       }
     } catch (e) {}
-    var migBtn = document.getElementById("ls-diag-mig");
+    var syncBtn = document.getElementById("ls-diag-sync");
+    if (syncBtn) { syncBtn.addEventListener("click", function () { mask.remove(); showSync(); }); }
+        var migBtn = document.getElementById("ls-diag-mig");
     if (migBtn) { migBtn.addEventListener("click", function () { mask.remove(); migrateFromFile(); }); }
         var trimBtn = document.getElementById("ls-diag-trim");
     if (trimBtn) {
