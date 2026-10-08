@@ -1098,7 +1098,12 @@ html, body { max-width: 100%; overflow-x: hidden; }
     catch (e) { r.ls = "fail:" + (e && e.name); }
     try { sessionStorage.setItem("__ls_probe__", stamp); r.ss = (sessionStorage.getItem("__ls_probe__") === stamp) ? "ok" : "read-fail"; sessionStorage.removeItem("__ls_probe__"); } catch (e) { r.ss = "fail"; }
     try { cookieSet("__ls_probe__", stamp); r.ck = (cookieGet("__ls_probe__") === stamp) ? "ok" : "read-fail"; } catch (e) { r.ck = "fail"; }
-    r.idb = window.indexedDB ? "pending" : "none";
+    r.idb = window.indexedDB ? "检测中" : "不可用";
+    r.idbProbe = function (cb) {
+      if (!window.indexedDB) { cb("不可用"); return; }
+      idbSet("__ls_probe__", stamp);
+      idbGet("__ls_probe__", function (v) { cb(v === stamp ? "ok（写后读回正常）" : "写后读不回"); });
+    };
     return r;
   }
 
@@ -1443,7 +1448,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
     html += "<div style='font-size:12.5px;color:#9aa3b2;margin:10px 0 4px'>存储自检（本机浏览器）</div>" +
       "<div style='border:1px solid #2a3040;border-radius:10px;padding:8px;background:#1b2130;font-size:11.5px;color:#c8cfda'>" +
       "localStorage：" + _st.ls + (_st.lsBack === "ok" ? "（写后读回正常）" : "（写后读不回！）") + "<br>" +
-      "sessionStorage：" + _st.ss + "　Cookie：" + _st.ck + "　IndexedDB：" + _st.idb +
+      "sessionStorage：" + _st.ss + "　Cookie：" + _st.ck + "　IndexedDB：<span id='ls-idb-state'>" + _st.idb + "</span>" +
       "<div style='color:#8b94a6;margin-top:4px'>任意一层正常，数据就有兜底。若 localStorage 显示 fail / 读不回，" +
       "请到浏览器设置里允许本站保存数据，并关闭无痕模式。</div></div>";
     var totalBytes = 0;
@@ -1475,6 +1480,14 @@ html, body { max-width: 100%; overflow-x: hidden; }
 
     document.getElementById("ls-diag-x").addEventListener("click", function () { mask.remove(); });
     document.getElementById("ls-diag-close").addEventListener("click", function () { mask.remove(); });
+    try {
+      if (_st && _st.idbProbe) {
+        _st.idbProbe(function (v) {
+          var el = document.getElementById("ls-idb-state");
+          if (el) { el.textContent = v; }
+        });
+      }
+    } catch (e) {}
     var migBtn = document.getElementById("ls-diag-mig");
     if (migBtn) { migBtn.addEventListener("click", function () { mask.remove(); migrateFromFile(); }); }
         var trimBtn = document.getElementById("ls-diag-trim");
