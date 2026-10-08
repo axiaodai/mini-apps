@@ -998,6 +998,80 @@ html, body { max-width: 100%; overflow-x: hidden; }
     } catch (e) {}
     return n;
   }
+  function applyFullDump(dump) {
+    var data = (dump && dump.数据) || {};
+    var keys = Object.keys(data);
+    if (!keys.length) { toast("这个备份里没有数据"); return; }
+    var info = [];
+    var prof = data["mini-apps-profiles-v1"];
+    if (prof && prof.list) { info.push("使用者 " + prof.list.length + " 个：" + prof.list.join("、")); }
+    [["mini-apps-blood-v1", "献血"], ["mini-apps-running-v1", "跑步"], ["mini-apps-blood-redeem-v1", "兑换"]].forEach(function (pair) {
+      var n = 0;
+      keys.forEach(function (k) {
+        if (k.indexOf(pair[0] + "::") === 0) {
+          try { var o = data[k]; if (Array.isArray(o)) { n += o.length; } else if (o && o.records) { n += o.records.length; } } catch (e) {}
+        }
+      });
+      if (n) { info.push(pair[1] + " " + n + " 条"); }
+    });
+    var old = document.getElementById("ls-dump");
+    if (old && old.parentNode) { old.parentNode.removeChild(old); }
+    var mask = document.createElement("div");
+    mask.id = "ls-dump";
+    mask.style.cssText = "position:fixed;inset:0;z-index:86;background:rgba(8,10,14,.72);display:flex;align-items:center;justify-content:center;padding:20px";
+    var card = document.createElement("div");
+    card.style.cssText = "background:#171a21;border:1px solid #2a3040;border-radius:14px;padding:16px;max-width:360px;width:100%;color:#e6e8ee;font:14px/1.7 -apple-system,'Microsoft YaHei',sans-serif";
+    card.innerHTML =
+      "<div style='font-size:16px;font-weight:600;margin-bottom:6px'>整机迁移 · 恢复全部数据</div>" +
+      "<div style='color:#9aa3b2;font-size:12.5px;margin-bottom:8px'>备份来自 <b style='color:#cfe0ff'>" +
+      escH(dump.来源网址 || "未知网址") + "</b>　导出于 " + escH(String(dump.导出时间 || "").slice(0, 16).replace("T", " ")) + "</div>" +
+      "<div style='border:1px solid #3a445c;background:#1b2130;border-radius:10px;padding:9px;font-size:12.5px;margin-bottom:10px'>将恢复：" +
+      escH(info.join(" · ") || "（无记录）") + "<br><span style='color:#ffb4b4'>会覆盖本机同名的数据；备份里没有的使用者不受影响</span></div>" +
+      "<div style='display:flex;gap:8px'>" +
+      "<button id='ls-dump-cancel' style='flex:1;padding:10px;border-radius:10px;border:1px solid #2a3040;background:#1b2130;color:#dfe6ef;cursor:pointer'>取消</button>" +
+      "<button id='ls-dump-ok' style='flex:1.5;padding:10px;border-radius:10px;border:none;background:#B3261E;color:#fff;font-weight:700;cursor:pointer'>恢复全部</button></div>";
+    mask.appendChild(card);
+    document.body.appendChild(mask);
+    document.getElementById("ls-dump-cancel").addEventListener("click", function () { mask.remove(); });
+    document.getElementById("ls-dump-ok").addEventListener("click", function () {
+      var fail = 0;
+      keys.forEach(function (k) { try { localStorage.setItem(k, JSON.stringify(data[k])); } catch (e) { fail++; } });
+      mask.remove();
+      if (fail) { storageAlert("有 " + fail + " 项没写进去（存储可能已满）。"); }
+      else { toast("已恢复整机备份：" + info.join(" · ")); }
+      try { if (typeof initData === "function") { initData(); } else { refresh(); } } catch (e) {}
+      updateUserLabel();
+    });
+  }
+  /* 选一个整机备份文件并恢复 */
+  function migrateFromFile() {
+    var f = document.getElementById("ls-mig-file");
+    if (!f) {
+      f = document.createElement("input");
+      f.type = "file"; f.accept = ".json,application/json"; f.id = "ls-mig-file"; f.style.display = "none";
+      f.addEventListener("change", function () {
+        var file = f.files && f.files[0];
+        if (!file) { return; }
+        var fr = new FileReader();
+        fr.onload = function () {
+          var raw = null;
+          try { raw = JSON.parse(String(fr.result || "")); } catch (e) { raw = null; }
+          try { f.value = ""; } catch (e) {}
+          if (!raw) { toast("文件读不出来，可能不是本工具的备份"); return; }
+          if (raw.__lsDumpVersion && raw.数据) { applyFullDump(raw); return; }
+          if (raw.records || Array.isArray(raw)) {
+            toast("这是「单个使用者」的备份，请用 ☰ →「导入恢复」");
+            return;
+          }
+          toast("不认识的备份格式");
+        };
+        fr.readAsText(file);
+      });
+      document.body.appendChild(f);
+    }
+    f.click();
+  }
+    window.__lsMigrate = { apply: applyFullDump, pick: migrateFromFile };
   function storageAlert(msg) {
     try {
       if (sessionStorage.getItem("ls-storage-alert") === "1") { return; }
@@ -1391,6 +1465,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
       (Math.round(totalBytes / 1024 * 10) / 10) + " KB（其中快照 " + (Math.round(snapBytes / 1024 * 10) / 10) + " KB）；" +
       "浏览器一般上限 5 MB</div>" +
       "<div style='display:flex;gap:8px;margin-bottom:8px'>" +
+      "<button id='ls-diag-mig' style='flex:1;padding:9px;border-radius:10px;border:1px solid #2c4a86;background:#1b2e52;color:#cfe0ff;cursor:pointer'>整机迁移 / 恢复全部</button>" +
       "<button id='ls-diag-trim' style='flex:1;padding:9px;border-radius:10px;border:1px solid #5a2a30;background:#2a1a1e;color:#ffb4b4;cursor:pointer'>清理历史快照数据（腾空间）</button>" +
       "</div>";
     html += "<div style='font-size:12.5px;color:#9aa3b2;margin:10px 0 4px'>本机所有数据键</div>";
@@ -1405,13 +1480,15 @@ html, body { max-width: 100%; overflow-x: hidden; }
     html += "<div style='color:#9aa3b2;font-size:12px;margin-top:10px'>如果某个使用者名下的记录在这里能查到，" +
       "说明数据还在，只是页面当前选的使用者不是他——回上一页点「使用者」切过去即可。</div>";
     html += "<div style='display:flex;gap:8px;margin-top:12px'>" +
-      "<button id='ls-diag-export' style='flex:1;padding:10px;border-radius:10px;border:1px solid #2c4a86;background:#1b2e52;color:#cfe0ff;cursor:pointer'>导出全部数据</button>" +
+      "<button id='ls-diag-export' style='flex:1;padding:10px;border-radius:10px;border:1px solid #2c4a86;background:#1b2e52;color:#cfe0ff;cursor:pointer'>导出全部数据（含所有使用者）</button>" +
       "<button id='ls-diag-close' style='flex:1;padding:10px;border-radius:10px;border:1px solid #2a3040;background:#1b2130;color:#dfe6ef;cursor:pointer'>关闭</button></div>";
     card.innerHTML = html;
 
     document.getElementById("ls-diag-x").addEventListener("click", function () { mask.remove(); });
     document.getElementById("ls-diag-close").addEventListener("click", function () { mask.remove(); });
-    var trimBtn = document.getElementById("ls-diag-trim");
+    var migBtn = document.getElementById("ls-diag-mig");
+    if (migBtn) { migBtn.addEventListener("click", function () { mask.remove(); migrateFromFile(); }); }
+        var trimBtn = document.getElementById("ls-diag-trim");
     if (trimBtn) {
       trimBtn.addEventListener("click", function () {
         var n = 0;
@@ -1424,7 +1501,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
       var dump = {};
       keys.forEach(function (k) { try { dump[k] = JSON.parse(localStorage.getItem(k)); } catch (e) {} });
       try {
-        var blob = new Blob([JSON.stringify({ 导出时间: new Date().toISOString(), 数据: dump }, null, 2)], { type: "application/json" });
+        var blob = new Blob([JSON.stringify({ __lsDumpVersion: 1, 导出时间: new Date().toISOString(), 来源网址: location.host, 数据: dump }, null, 2)], { type: "application/json" });
         var a = document.createElement("a");
         a.href = URL.createObjectURL(blob);
         a.download = "mini-apps-全部数据-" + new Date().toISOString().slice(0, 10) + ".json";
@@ -1799,6 +1876,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
     window.__lsToolsQueue = [];
     panel.appendChild(btn("使用者：" + currentUser(), function () { showUserManager(); }, "ls-user"));
         panel.appendChild(btn("数据自检 / 导出全部", function () { showDiag(); }, "ls-diag-btn"));
+    panel.appendChild(btn("整机迁移（从别的浏览器搬数据）", function () { migrateFromFile(); }, "ls-migrate"));
     function exportBackup() {
       var payload = db();
       /* 页面附加数据（如献血页的积分兑换记录）一并导出 */
