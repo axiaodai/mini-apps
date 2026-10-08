@@ -971,6 +971,229 @@ html, body { max-width: 100%; overflow-x: hidden; }
     refresh();
     updateUserLabel();
   }
+  /* ---- 通用：编辑记录（两个页面共用）---- */
+  function recKind() { return document.getElementById("f-amount") ? "blood" : "running"; }
+  function lsCountOfKey(key) {
+    try {
+      var o = JSON.parse(localStorage.getItem(key) || "null");
+      if (o && Array.isArray(o.records)) { return o.records.length; }
+      if (Array.isArray(o)) { return o.length; }
+    } catch (e) {}
+    return null;
+  }
+  function editRecord(idx) {
+    var d = db(), r = d.records[idx];
+    if (!r) { toast("这条记录不存在"); return; }
+    var kind = recKind();
+    var old = document.getElementById("ls-edit");
+    if (old && old.parentNode) { old.parentNode.removeChild(old); }
+    var mask = document.createElement("div");
+    mask.id = "ls-edit";
+    mask.style.cssText = "position:fixed;inset:0;z-index:84;background:rgba(8,10,14,.72);display:flex;" +
+      "align-items:flex-end;justify-content:center;padding:0";
+    var card = document.createElement("div");
+    card.style.cssText = "background:#fff;color:#221a17;width:100%;max-width:480px;border-radius:18px 18px 0 0;" +
+      "padding:18px;max-height:88vh;overflow-y:auto;font:14px/1.6 -apple-system,'Microsoft YaHei',sans-serif";
+    mask.appendChild(card);
+    document.body.appendChild(mask);
+    mask.addEventListener("click", function (e) { if (e.target === mask) { mask.remove(); } });
+    try { if (window.__lsTools && window.__lsTools.close) { window.__lsTools.close(); } } catch (e) {}
+
+    function row(label, inner) {
+      return "<div style='margin-top:10px'><div style='font-size:12.5px;color:#8b8079;margin-bottom:4px'>" + label + "</div>" + inner + "</div>";
+    }
+    function inp(id, val, type, extra) {
+      return "<input id='" + id + "' type='" + (type || "text") + "' value='" + escAttr(val) + "' " + (extra || "") +
+             " style='width:100%;box-sizing:border-box;padding:10px;border-radius:10px;border:1px solid #e8e0d9;font-size:14px'>";
+    }
+    function sel(id, val, opts) {
+      return "<select id='" + id + "' style='width:100%;box-sizing:border-box;padding:10px;border-radius:10px;" +
+             "border:1px solid #e8e0d9;font-size:14px;background:#fff'>" +
+             opts.map(function (o) {
+               return "<option value='" + escAttr(o[0]) + "'" + (String(o[0]) === String(val) ? " selected" : "") + ">" + o[1] + "</option>";
+             }).join("") + "</select>";
+    }
+    function escAttr(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;"); }
+
+    var html = "<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:4px'>" +
+      "<div style='font-size:17px;font-weight:700'>修改这条记录</div>" +
+      "<button id='ls-edit-x' style='background:none;border:none;font-size:24px;color:#8b8079;cursor:pointer'>×</button></div>";
+
+    if (kind === "blood") {
+      html += row("献血日期", inp("ls-e-date", r[0], "date"));
+      html += row("类型", sel("ls-e-type", r[1], [["全血", "全血"], ["血小板", "血小板（成分血）"]]));
+      html += row("血量 / 治疗量", inp("ls-e-amount", r[2], "number", "min='0.5' step='0.5'"));
+      html += row("献血地点", inp("ls-e-place", r[4]));
+      html += row("积分（价格）", inp("ls-e-points", r[5], "number", "min='0' step='1'"));
+      html += row("备注", inp("ls-e-note", r[6]));
+      html += "<div style='font-size:12px;color:#8b8079;margin-top:8px'>折算次数会自动按类型与血量重算（全血 200ml=1 次，血小板 1 治疗量=1 次）。</div>";
+    } else {
+      var secs = Number(r[6]) || 0;
+      html += row("名称", inp("ls-e-name", r[0]));
+      html += row("日期", inp("ls-e-date", r[3], "date"));
+      html += row("公里数", inp("ls-e-km", r[1], "number", "min='0.01' step='0.01'"));
+      html += "<div style='display:flex;gap:8px'>" +
+        "<div style='flex:1'>" + row("用时·时", inp("ls-e-h", Math.floor(secs / 3600), "number", "min='0'")) + "</div>" +
+        "<div style='flex:1'>" + row("分", inp("ls-e-m", Math.floor(secs % 3600 / 60), "number", "min='0' max='59'")) + "</div>" +
+        "<div style='flex:1'>" + row("秒", inp("ls-e-s", secs % 60, "number", "min='0' max='59'")) + "</div></div>";
+      html += row("奖牌", sel("ls-e-medal", r[4] || "", [["", "无"], ["p", "实体奖牌"], ["v", "虚拟奖牌"]]));
+      html += row("收货状态", sel("ls-e-recv", r[5] || "", [["", "未设置"], ["y", "已收到"], ["n", "未收到"]]));
+      html += row("备注", inp("ls-e-note", r[8]));
+    }
+    html += "<div style='display:flex;gap:8px;margin-top:16px'>" +
+      "<button id='ls-edit-cancel' style='flex:1;padding:12px;border-radius:12px;border:1px solid #e8e0d9;background:#fff;cursor:pointer'>取消</button>" +
+      "<button id='ls-edit-save' style='flex:1.6;padding:12px;border-radius:12px;border:none;background:#B3261E;color:#fff;font-weight:700;cursor:pointer'>保存修改</button></div>";
+    card.innerHTML = html;
+
+    document.getElementById("ls-edit-x").addEventListener("click", function () { mask.remove(); });
+    document.getElementById("ls-edit-cancel").addEventListener("click", function () { mask.remove(); });
+    document.getElementById("ls-edit-save").addEventListener("click", async function () {
+      var btn = this;
+      var payload;
+      if (kind === "blood") {
+        var amount = parseFloat(document.getElementById("ls-e-amount").value);
+        if (!isFinite(amount) || amount <= 0) { toast("请填写献血量"); return; }
+        payload = {
+          date: document.getElementById("ls-e-date").value,
+          type: document.getElementById("ls-e-type").value,
+          amount: amount,
+          place: document.getElementById("ls-e-place").value.trim(),
+          points: parseInt(document.getElementById("ls-e-points").value, 10) || 0,
+          note: document.getElementById("ls-e-note").value.trim()
+        };
+        if (!payload.date) { toast("请选择日期"); return; }
+      } else {
+        var km = parseFloat(document.getElementById("ls-e-km").value);
+        if (!isFinite(km) || km <= 0) { toast("请填写公里数"); return; }
+        var h = parseInt(document.getElementById("ls-e-h").value, 10) || 0;
+        var m = parseInt(document.getElementById("ls-e-m").value, 10) || 0;
+        var s = parseInt(document.getElementById("ls-e-s").value, 10) || 0;
+        var secs2 = h * 3600 + m * 60 + s;
+        if (secs2 <= 0) { toast("请填写用时"); return; }
+        payload = {
+          name: document.getElementById("ls-e-name").value.trim(),
+          date: document.getElementById("ls-e-date").value,
+          km: km, secs: secs2,
+          dur: h > 0 ? (h + "小时" + m + "分" + s + "秒") : (m + "分钟" + s + "秒"),
+          medal: document.getElementById("ls-e-medal").value,
+          received: document.getElementById("ls-e-medal").value === "p" ? document.getElementById("ls-e-recv").value : "",
+          note: document.getElementById("ls-e-note").value.trim()
+        };
+        if (!payload.date) { toast("请选择日期"); return; }
+      }
+      btn.disabled = true;
+      try {
+        var resp = await fetch("/api/records?index=" + idx, {
+          method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+        });
+        var out = await resp.json();
+        if (!resp.ok || !out.ok) { throw new Error(out.error || "保存失败"); }
+        mask.remove();
+        toast("已修改并保存");
+        try { snapSave("修改记录后自动备份", true); } catch (e) {}
+        if (typeof initData === "function") { initData(); }
+        else if (typeof refresh === "function") { refresh(); }
+        setTimeout(function () { try { paintEditButtons(); } catch (e) {} }, 400);
+      } catch (e) {
+        toast(e.message || "保存失败，请重试");
+      } finally { btn.disabled = false; }
+    });
+  }
+
+  /* 给记录列表的每一行补一个「编辑」按钮（献血页原本没有） */
+  function paintEditButtons() {
+    var list = document.getElementById("rec-list");
+    if (!list) { return; }
+    var rows = list.querySelectorAll("li");
+    for (var i = 0; i < rows.length; i++) {
+      var li = rows[i];
+      if (li.querySelector("[data-lsedit]")) { continue; }
+      /* 记录索引：优先用页面上已有的 data-edit / data-del，其次按顺序 */
+      var ref = li.querySelector("[data-edit]") || li.querySelector("[data-del]");
+      var idx = ref ? Number(ref.getAttribute("data-edit") || ref.getAttribute("data-del")) : i;
+      var holder = li.querySelector(".rec-ops") || li;
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "rec-op edit";
+      b.setAttribute("data-lsedit", String(idx));
+      b.textContent = "编辑";
+      if (li.querySelector("[data-edit]")) { continue; }   /* 页面自带编辑的（跑步页）就不重复加 */
+      holder.appendChild(b);
+    }
+  }
+
+  /* ---- 数据自检 ---- */
+  function showDiag() {
+    var old = document.getElementById("ls-diag");
+    if (old && old.parentNode) { old.parentNode.removeChild(old); }
+    var mask = document.createElement("div");
+    mask.id = "ls-diag";
+    mask.style.cssText = "position:fixed;inset:0;z-index:85;background:rgba(8,10,14,.72);display:flex;" +
+      "align-items:center;justify-content:center;padding:18px";
+    mask.addEventListener("click", function (e) { if (e.target === mask) { mask.remove(); } });
+    var card = document.createElement("div");
+    card.style.cssText = "background:#171a21;border:1px solid #2a3040;border-radius:14px;padding:16px;max-width:380px;width:100%;" +
+      "max-height:86vh;overflow-y:auto;color:#e6e8ee;font:13px/1.7 -apple-system,'Microsoft YaHei',sans-serif";
+    mask.appendChild(card);
+    document.body.appendChild(mask);
+    try { if (window.__lsTools && window.__lsTools.close) { window.__lsTools.close(); } } catch (e) {}
+
+    var p = readProfiles();
+    var keys = [];
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k && k.indexOf("mini-apps-") === 0) { keys.push(k); }
+    }
+    keys.sort();
+    var html = "<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:6px'>" +
+      "<div style='font-size:16px;font-weight:600'>数据自检</div>" +
+      "<button id='ls-diag-x' style='background:none;border:none;color:#9aa3b2;font-size:22px;cursor:pointer'>×</button></div>";
+    html += "<div style='color:#9aa3b2;font-size:12.5px;margin-bottom:8px'>" +
+      "当前网址：<b style='color:#cfe0ff'>" + escH(location.host) + "</b><br>" +
+      "当前使用者：<b style='color:#cfe0ff'>" + escH(p.current) + "</b>　（数据按「网址 + 使用者」分开存）</div>";
+    html += "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>使用者与记录条数</div>";
+    p.list.forEach(function (n) {
+      var tot = 0, parts = [];
+      [["mini-apps-blood-v1", "献血"], ["mini-apps-running-v1", "跑步"], ["mini-apps-blood-redeem-v1", "兑换"]].forEach(function (a) {
+        var c = lsCountOfKey(a[0] + "::" + n);
+        if (c) { tot += c; parts.push(a[1] + " " + c); }
+      });
+      html += "<div style='border:1px solid #2a3040;border-radius:10px;padding:8px;margin:5px 0;background:#1b2130'>" +
+        "<b>" + escH(n) + "</b>" + (n === p.current ? " <span style='color:#7fa7ff'>当前</span>" : "") +
+        "<div style='color:#8b94a6;font-size:11.5px'>" + (parts.length ? parts.join(" · ") + "（共 " + tot + " 条）" : "无记录") + "</div></div>";
+    });
+    html += "<div style='font-size:12.5px;color:#9aa3b2;margin:10px 0 4px'>本机所有数据键</div>";
+    keys.forEach(function (k) {
+      var c = lsCountOfKey(k);
+      var bytes = 0;
+      try { bytes = (localStorage.getItem(k) || "").length; } catch (e) {}
+      html += "<div style='font-size:11.5px;color:#c8cfda;border-bottom:1px solid #232a38;padding:3px 0'>" +
+        "<code style='color:#9fd0ff'>" + escH(k) + "</code> <span style='color:#8b94a6'>" +
+        (c === null ? "配置" : c + " 条") + " · " + Math.round(bytes / 1024 * 10) / 10 + " KB</span></div>";
+    });
+    html += "<div style='color:#9aa3b2;font-size:12px;margin-top:10px'>如果某个使用者名下的记录在这里能查到，" +
+      "说明数据还在，只是页面当前选的使用者不是他——回上一页点「使用者」切过去即可。</div>";
+    html += "<div style='display:flex;gap:8px;margin-top:12px'>" +
+      "<button id='ls-diag-export' style='flex:1;padding:10px;border-radius:10px;border:1px solid #2c4a86;background:#1b2e52;color:#cfe0ff;cursor:pointer'>导出全部数据</button>" +
+      "<button id='ls-diag-close' style='flex:1;padding:10px;border-radius:10px;border:1px solid #2a3040;background:#1b2130;color:#dfe6ef;cursor:pointer'>关闭</button></div>";
+    card.innerHTML = html;
+
+    document.getElementById("ls-diag-x").addEventListener("click", function () { mask.remove(); });
+    document.getElementById("ls-diag-close").addEventListener("click", function () { mask.remove(); });
+    document.getElementById("ls-diag-export").addEventListener("click", function () {
+      var dump = {};
+      keys.forEach(function (k) { try { dump[k] = JSON.parse(localStorage.getItem(k)); } catch (e) {} });
+      try {
+        var blob = new Blob([JSON.stringify({ 导出时间: new Date().toISOString(), 数据: dump }, null, 2)], { type: "application/json" });
+        var a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "mini-apps-全部数据-" + new Date().toISOString().slice(0, 10) + ".json";
+        document.body.appendChild(a); a.click(); a.remove();
+        toast("已导出全部数据");
+      } catch (e) { toast("导出失败"); }
+    });
+  }
+
   /* ---- 自动安全副本（快照）+ 导出提醒 ---- */
   var SNAP_KEY = "mini-apps-snapshots-v1";
   var SNAP_MAX = 5;
@@ -1109,6 +1332,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
     render();
   }
 
+  window.__lsEdit = { edit: editRecord, paint: paintEditButtons, diag: showDiag };
   window.__lsSnap = { save: snapSave, restore: snapRestore, list: snapList, show: showSnapshots, saveForUser: snapSaveForUser, deleteUser: lsDeleteUser, showUserManager: showUserManager };
   window.__lsShowSnapshots = showSnapshots;
 
@@ -1441,6 +1665,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
     window.__lsToolsQueue = [];
     panel.appendChild(btn("使用者：" + currentUser(), function () { showUserManager(); }, "ls-user"));
     panel.appendChild(btn("恢复快照（自动备份）", function () { showSnapshots(); }, "ls-snapshots"));
+    panel.appendChild(btn("数据自检 / 导出全部", function () { showDiag(); }, "ls-diag-btn"));
     function exportBackup() {
       var payload = db();
       /* 页面附加数据（如献血页的积分兑换记录）一并导出 */
@@ -1471,6 +1696,138 @@ html, body { max-width: 100%; overflow-x: hidden; }
     updateUserLabel();
     maybeAskWho();
     try { snapSave("打开页面自动备份"); } catch (e) {}
+    [600, 1500, 3000].forEach(function (ms) { setTimeout(function () { try { paintEditButtons(); } catch (e) {} }, ms); });
+    document.addEventListener("click", function (e) {
+      var t = e.target;
+      if (t && t.getAttribute && t.getAttribute("data-lsedit") !== null && t.getAttribute("data-lsedit") !== undefined && t.getAttribute("data-lsedit") !== "") {
+        e.stopPropagation(); e.preventDefault();
+        try { editRecord(Number(t.getAttribute("data-lsedit"))); } catch (err) { toast("打不开编辑器" + (err && err.message ? "：" + err.message : "")); }
+      }
+    }, true);
+
+    setTimeout(function () { try { snapSave("打开页面自动备份"); } catch (e) {} }, 2500);
+    try { snapSave("打开页面自动备份"); } catch (e) {}
+    [600, 1500, 3000].forEach(function (ms) { setTimeout(function () { try { paintEditButtons(); } catch (e) {} }, ms); });
+    document.addEventListener("click", function (e) {
+      var t = e.target;
+      if (t && t.getAttribute && t.getAttribute("data-lsedit") !== null && t.getAttribute("data-lsedit") !== undefined && t.getAttribute("data-lsedit") !== "") {
+        e.stopPropagation(); e.preventDefault();
+        try { editRecord(Number(t.getAttribute("data-lsedit"))); } catch (err) { toast("打不开编辑器" + (err && err.message ? "：" + err.message : "")); }
+      }
+    }, true);
+
+    setTimeout(function () { try { snapSave("打开页面自动备份"); } catch (e) {} }, 2500);
+    try { snapSave("打开页面自动备份"); } catch (e) {}
+    [600, 1500, 3000].forEach(function (ms) { setTimeout(function () { try { paintEditButtons(); } catch (e) {} }, ms); });
+    document.addEventListener("click", function (e) {
+      var t = e.target;
+      if (t && t.getAttribute && t.getAttribute("data-lsedit") !== null && t.getAttribute("data-lsedit") !== undefined && t.getAttribute("data-lsedit") !== "") {
+        e.stopPropagation(); e.preventDefault();
+        try { editRecord(Number(t.getAttribute("data-lsedit"))); } catch (err) { toast("打不开编辑器" + (err && err.message ? "：" + err.message : "")); }
+      }
+    }, true);
+
+    setTimeout(function () { try { snapSave("打开页面自动备份"); } catch (e) {} }, 2500);
+    try { snapSave("打开页面自动备份"); } catch (e) {}
+    [600, 1500, 3000].forEach(function (ms) { setTimeout(function () { try { paintEditButtons(); } catch (e) {} }, ms); });
+    document.addEventListener("click", function (e) {
+      var t = e.target;
+      if (t && t.getAttribute && t.getAttribute("data-lsedit") !== null && t.getAttribute("data-lsedit") !== undefined && t.getAttribute("data-lsedit") !== "") {
+        e.stopPropagation(); e.preventDefault();
+        try { editRecord(Number(t.getAttribute("data-lsedit"))); } catch (err) { toast("打不开编辑器" + (err && err.message ? "：" + err.message : "")); }
+      }
+    }, true);
+
+    setTimeout(function () { try { snapSave("打开页面自动备份"); } catch (e) {} }, 2500);
+    try { snapSave("打开页面自动备份"); } catch (e) {}
+    [600, 1500, 3000].forEach(function (ms) { setTimeout(function () { try { paintEditButtons(); } catch (e) {} }, ms); });
+    document.addEventListener("click", function (e) {
+      var t = e.target;
+      var idxAttr = null;
+      if (t && t.getAttribute) {
+        if (t.getAttribute("data-lsedit")) { idxAttr = t.getAttribute("data-lsedit"); }
+        else if (t.getAttribute("data-edit") !== null && t.getAttribute("data-edit") !== undefined && t.getAttribute("data-edit") !== "") { idxAttr = t.getAttribute("data-edit"); }
+      }
+      if (idxAttr !== null) {
+        e.stopPropagation(); e.preventDefault();
+        try { editRecord(Number(idxAttr)); } catch (err) { toast("打不开编辑器" + (err && err.message ? "：" + err.message : "")); }
+      }
+    }, true);
+
+    setTimeout(function () { try { snapSave("打开页面自动备份"); } catch (e) {} }, 2500);
+    try { snapSave("打开页面自动备份"); } catch (e) {}
+    [600, 1500, 3000].forEach(function (ms) { setTimeout(function () { try { paintEditButtons(); } catch (e) {} }, ms); });
+    document.addEventListener("click", function (e) {
+      var t = e.target;
+      if (t && t.getAttribute && t.getAttribute("data-lsedit") !== null && t.getAttribute("data-lsedit") !== undefined && t.getAttribute("data-lsedit") !== "") {
+        e.stopPropagation(); e.preventDefault();
+        try { editRecord(Number(t.getAttribute("data-lsedit"))); } catch (err) { toast("打不开编辑器" + (err && err.message ? "：" + err.message : "")); }
+      }
+    }, true);
+
+    setTimeout(function () { try { snapSave("打开页面自动备份"); } catch (e) {} }, 2500);
+    try { snapSave("打开页面自动备份"); } catch (e) {}
+    [600, 1500, 3000].forEach(function (ms) { setTimeout(function () { try { paintEditButtons(); } catch (e) {} }, ms); });
+    (function watchRecList() {
+      var list = document.getElementById("rec-list");
+      if (!list) { setTimeout(watchRecList, 500); return; }
+      try {
+        new MutationObserver(function () { try { paintEditButtons(); } catch (e) {} }).observe(list, { childList: true, subtree: true });
+      } catch (e) {}
+      try { paintEditButtons(); } catch (e) {}
+    })();
+    document.addEventListener("click", function (e) {
+      var t = e.target;
+      if (t && t.getAttribute && t.getAttribute("data-lsedit") !== null && t.getAttribute("data-lsedit") !== undefined && t.getAttribute("data-lsedit") !== "") {
+        e.stopPropagation(); e.preventDefault();
+        try { editRecord(Number(t.getAttribute("data-lsedit"))); } catch (err) { toast("打不开编辑器" + (err && err.message ? "：" + err.message : "")); }
+      }
+    }, true);
+
+    setTimeout(function () { try { snapSave("打开页面自动备份"); } catch (e) {} }, 2500);
+    try { snapSave("打开页面自动备份"); } catch (e) {}
+    setTimeout(function () { try { paintEditButtons(); } catch (e) {} }, 800);
+    document.addEventListener("click", function (e) {
+      var t = e.target;
+      if (t && t.getAttribute && t.getAttribute("data-lsedit") !== null && t.getAttribute("data-lsedit") !== undefined && t.getAttribute("data-lsedit") !== "") {
+        e.stopPropagation(); e.preventDefault();
+        try { editRecord(Number(t.getAttribute("data-lsedit"))); } catch (err) { toast("打不开编辑器" + (err && err.message ? "：" + err.message : "")); }
+      }
+    }, true);
+
+    setTimeout(function () { try { snapSave("打开页面自动备份"); } catch (e) {} }, 2500);
+    try { snapSave("打开页面自动备份"); } catch (e) {}
+    setTimeout(function () { try { paintEditButtons(); } catch (e) {} }, 800);
+    document.addEventListener("click", function (e) {
+      var t = e.target;
+      if (t && t.getAttribute && t.getAttribute("data-lsedit") !== null && t.getAttribute("data-lsedit") !== undefined && t.getAttribute("data-lsedit") !== "") {
+        e.stopPropagation(); e.preventDefault();
+        try { editRecord(Number(t.getAttribute("data-lsedit"))); } catch (err) { toast("打不开编辑器" + (err && err.message ? "：" + err.message : "")); }
+      }
+    }, true);
+
+    setTimeout(function () { try { snapSave("打开页面自动备份"); } catch (e) {} }, 2500);
+    try { snapSave("打开页面自动备份"); } catch (e) {}
+    setTimeout(function () { try { paintEditButtons(); } catch (e) {} }, 800);
+    document.addEventListener("click", function (e) {
+      var t = e.target;
+      if (t && t.getAttribute && t.getAttribute("data-lsedit") !== null && t.getAttribute("data-lsedit") !== undefined && t.getAttribute("data-lsedit") !== "") {
+        e.stopPropagation(); e.preventDefault();
+        try { editRecord(Number(t.getAttribute("data-lsedit"))); } catch (err) { toast("打不开编辑器" + (err && err.message ? "：" + err.message : "")); }
+      }
+    }, true);
+
+    setTimeout(function () { try { snapSave("打开页面自动备份"); } catch (e) {} }, 2500);
+    try { snapSave("打开页面自动备份"); } catch (e) {}
+    setTimeout(function () { try { paintEditButtons(); } catch (e) {} }, 800);
+    document.addEventListener("click", function (e) {
+      var t = e.target;
+      if (t && t.getAttribute && t.getAttribute("data-lsedit") !== null && t.getAttribute("data-lsedit") !== undefined && t.getAttribute("data-lsedit") !== "") {
+        e.stopPropagation(); e.preventDefault();
+        try { editRecord(Number(t.getAttribute("data-lsedit"))); } catch (err) { toast("打不开编辑器" + (err && err.message ? "：" + err.message : "")); }
+      }
+    }, true);
+
     setTimeout(function () { try { snapSave("打开页面自动备份"); } catch (e) {} }, 2500);
     try { snapSave("打开页面自动备份"); } catch (e) {}
     setTimeout(function () { try { snapSave("打开页面自动备份"); } catch (e) {} }, 2500);
