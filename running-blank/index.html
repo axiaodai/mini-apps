@@ -872,6 +872,14 @@ html, body { max-width: 100%; overflow-x: hidden; }
 
 
 
+
+
+
+
+
+
+
+
 <script>/* ==== 本地存储代理（公开版：不连服务器 · 按使用者隔离） ====
    这些页面原本调用 NAS 上的 /api/*；公开版改为读写浏览器本地存储。
    同一台设备上可以有多位使用者，各自的数据互不可见。
@@ -1591,6 +1599,10 @@ html, body { max-width: 100%; overflow-x: hidden; }
     var card = document.createElement("div");
     card.style.cssText = "background:#171a21;border:1px solid #2a3040;border-radius:14px;padding:16px;max-width:400px;width:100%;" +
       "max-height:88vh;overflow-y:auto;color:#e6e8ee;font:13px/1.7 -apple-system,'Microsoft YaHei',sans-serif";
+    /* 自动识别服务器地址：页面从 NAS 打开时，地址就是页面自己的来源 */
+    var autoOrigin = (location.protocol === "http:" || location.protocol === "https:") ? location.origin : "";
+    var urlVal = c.url || autoOrigin || "";
+    var urlRO = (!c.url && autoOrigin) ? " readonly" : "";
     var inp = function (id, val, ph, type) {
       return "<input id='" + id + "' type='" + (type || "text") + "' value='" + escH(val || "") + "' placeholder='" + escH(ph || "") +
         "' style='width:100%;box-sizing:border-box;padding:10px;border-radius:10px;border:1px solid #2a3040;background:#12151c;color:#e6e8ee;font-size:13px;margin-bottom:8px'>";
@@ -1601,7 +1613,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
       "<button id='ls-nas-x' style='background:none;border:none;color:#9aa3b2;font-size:22px;cursor:pointer'>×</button></div>" +
       "<div id='ls-nas-status' style='font-size:12.5px;margin-bottom:10px'></div>" +
       "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>服务器地址（飞牛 NAS，带端口）</div>" +
-      inp("ls-nas-url", c.url || "", "http://192.168.3.67:8080") +
+      inp("ls-nas-url", urlVal, "http://你的NAS地址:8080") +
       "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>使用者名字（要和页面里的使用者一致）</div>" +
       inp("ls-nas-user", c.user || currentUser(), "例如：呆") +
       "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>口令（在 NAS 任务脚本里设定的那个）</div>" +
@@ -1625,6 +1637,19 @@ html, body { max-width: 100%; overflow-x: hidden; }
     nasPaintStatus();
     function msg(t, ok) { var el = document.getElementById("ls-nas-msg"); if (el) { el.style.color = ok ? "#8fe3a8" : "#ffb4b4"; el.textContent = t; } }
     document.getElementById("ls-nas-x").addEventListener("click", function () { mask.remove(); });
+    /* 地址自动识别时锁定输入框，只让用户填口令 */
+    (function () {
+      var uf = document.getElementById("ls-nas-url");
+      if (!uf) { return; }
+      if (!c.url && autoOrigin) {
+        uf.value = autoOrigin; uf.readOnly = true; uf.style.opacity = ".75";
+        var tip = document.createElement("div");
+        tip.style.cssText = "font-size:11.5px;color:#8fe3a8;margin:-4px 0 8px";
+        tip.textContent = "✓ 服务器地址已自动识别（你只需填口令）";
+        uf.parentNode.insertBefore(tip, uf.nextSibling);
+      }
+    })();
+
     document.getElementById("ls-nas-connect").addEventListener("click", function () {
       var url = document.getElementById("ls-nas-url").value.trim();
       var user = document.getElementById("ls-nas-user").value.trim();
@@ -2454,7 +2479,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
       var v = document.createElement("div");
       v.id = "ls-version";
       v.style.cssText = "margin-top:10px;padding-top:8px;border-top:1px solid #2a3040;font-size:11px;color:#8b94a6;text-align:center;line-height:1.6";
-      v.textContent = "版本 2026-10-08e · 含 NAS 同步";
+      v.textContent = "版本 2026-10-08f · 含 NAS 同步";
       panel.appendChild(v);
     })();
     function exportBackup() {
