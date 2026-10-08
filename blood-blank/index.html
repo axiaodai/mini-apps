@@ -1714,6 +1714,12 @@ html, body { max-width: 100%; overflow-x: hidden; }
       "<button id='ls-nas-sync' style='flex:1.2;padding:11px;border-radius:10px;border:1px solid #2c4a86;background:#1b2e52;color:#cfe0ff;cursor:pointer'>立即同步</button>" +
       "<button id='ls-nas-down' style='flex:1;padding:11px;border-radius:10px;border:1px solid #2a3040;background:#1b2130;color:#dfe6ef;cursor:pointer'>只下载</button>" +
       "<button id='ls-nas-up' style='flex:1;padding:11px;border-radius:10px;border:1px solid #2a3040;background:#1b2130;color:#dfe6ef;cursor:pointer'>只上传</button></div>" +
+      "<div style='border-top:1px solid #2a3040;margin:12px 0 8px'></div>" +
+      "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>修改口令（本机已连接时，原口令可留空）</div>" +
+      inp("ls-nas-old", "", "原口令", "password") +
+      inp("ls-nas-new", "", "新口令（至少 4 位）", "password") +
+      inp("ls-nas-new2", "", "再输一次新口令", "password") +
+      "<button id='ls-nas-passwd' style='width:100%;padding:10px;border-radius:10px;border:1px solid #2c4a86;background:#1b2e52;color:#cfe0ff;cursor:pointer;margin-bottom:6px'>保存新口令</button>" +
       "<label style='display:flex;gap:8px;align-items:center;font-size:12.5px;color:#9aa3b2'>" +
       "<input id='ls-nas-auto' type='checkbox'" + ((c.auto === false) ? "" : " checked") + "> 打开页面时自动同步（每次记录后也会自动同步）</label>" +
       "<div style='color:#8b94a6;font-size:11.5px;margin-top:8px'>合并规则：两边的记录取并集，完全相同的那条自动去重；提醒配置以本机为准。" +
@@ -1764,6 +1770,28 @@ html, body { max-width: 100%; overflow-x: hidden; }
       cc.auto = this.checked;
       nasSaveCfg(cc);
       msg(this.checked ? "已开启自动同步" : "已关闭自动同步（仍可手动同步）", true);
+    });
+    document.getElementById("ls-nas-passwd").addEventListener("click", function () {
+      var cc = nasCfg() || {};
+      var user = ((document.getElementById("ls-nas-user") || {}).value || "").trim() || cc.user;
+      var oldp = (document.getElementById("ls-nas-old") || {}).value || "";
+      var n1 = (document.getElementById("ls-nas-new") || {}).value || "";
+      var n2 = (document.getElementById("ls-nas-new2") || {}).value || "";
+      if (!user) { msg("请先填使用者名字"); return; }
+      if (n1.length < 4) { msg("新口令至少 4 位"); return; }
+      if (n1 !== n2) { msg("两次输入的新口令不一致"); return; }
+      msg("正在修改口令…");
+      nasReq("POST", "/api/passwd", { user: user, old: oldp, new: n1 }).then(function (r) {
+        if (!r.ok || !r.body || !r.body.ok) { throw new Error((r.body && r.body.error) || ("修改失败 " + r.status)); }
+        var c2 = nasCfg() || {};
+        c2.token = r.body.token; c2.user = r.body.user;
+        nasSaveCfg(c2);
+        ["ls-nas-old", "ls-nas-new", "ls-nas-new2"].forEach(function (id) {
+          var el = document.getElementById(id); if (el) { el.value = ""; }
+        });
+        msg("口令已修改 ✓　其它设备要用新口令重新连接一次（本机不用）", true);
+        nasPaintStatus();
+      }).catch(function (e) { msg(nasHint(e)); });
     });
     document.getElementById("ls-nas-sync").addEventListener("click", function () {
       nasSync("手动").then(function (r) { msg(r.msg, r.ok); });
@@ -2617,7 +2645,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
       var v = document.createElement("div");
       v.id = "ls-version";
       v.style.cssText = "margin-top:10px;padding-top:8px;border-top:1px solid #2a3040;font-size:11px;color:#8b94a6;text-align:center;line-height:1.6";
-      v.textContent = "版本 2026-10-08f · 含 NAS 同步";
+      v.textContent = "版本 2026-10-08g · 含 NAS 同步";
       panel.appendChild(v);
     })();
     function exportBackup() {
