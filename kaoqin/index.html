@@ -220,12 +220,23 @@ main{max-width:560px; margin:0 auto; padding:14px 14px 20px;}
 }
 .edit-note svg{flex:none; margin-top:1px;}
 .hint{font-size:12px; color:var(--faint); margin-top:9px; line-height:1.55;}
-.rule-item{display:flex; gap:10px; padding:10px 0; border-bottom:1px dashed rgba(13,148,136,.13); font-size:13.5px; line-height:1.6;}
+.rule-item{display:flex; gap:10px; padding:10px 0; border-bottom:1px dashed rgba(13,148,136,.13); font-size:13.5px; line-height:1.65;}
 .rule-item:last-child{border-bottom:none;}
 .rule-item .rk{flex:none; width:26px; height:26px; border-radius:9px; background:var(--brand-soft); color:var(--brand-deep); font-weight:800; font-size:13px; display:flex; align-items:center; justify-content:center; margin-top:1px;}
 .rule-item .rt b{color:var(--ink);}
-.rule-item .rt{color:var(--muted);}
-.rule-item .rt .ex{display:block; margin-top:5px; font-size:12px; color:var(--faint); background:var(--brand-faint); border:1px solid var(--line-soft); border-radius:9px; padding:7px 9px;}
+.rule-item .rt{color:var(--muted); min-width:0; overflow-wrap:anywhere; word-break:break-word;}
+.rule-item .rt .ex{display:block; margin-top:5px; font-size:12px; color:#8b6413; background:#FFF6E5; border:1px solid #EBD3A3; border-radius:9px; padding:7px 9px;}
+/* 规则页配色语义（与献血 / 跑步页的使用说明一致）：
+   琥珀块 = 需要你自己填 / 自己选；红块 = 一定要注意；绿块 = 好消息（放心） */
+.rule-item .rt .ex.key{color:#8f231c; background:#FDF0EE; border-color:#F3C9C4; font-weight:600;}
+.rule-item .rt .ex.ok{color:#1f6f4a; background:#EEF7F1; border-color:#BFDFC9; font-weight:600;}
+.rule-item.rule-key{border-left:3px solid #F3C9C4; border-radius:2px 12px 12px 2px; padding-left:10px; background:linear-gradient(90deg,#FDF0EE,rgba(253,240,238,0));}
+.rule-item.rule-key .rk{background:#FDF0EE; color:#8f231c;}
+.rule-item.rule-ok{border-left:3px solid #BFDFC9; border-radius:2px 12px 12px 2px; padding-left:10px; background:linear-gradient(90deg,#EEF7F1,rgba(238,247,241,0));}
+.rule-item.rule-ok .rk{background:#EEF7F1; color:#1f6f4a;}
+.rule-item .fill{color:#8b6413; font-weight:800;}
+.rule-legend{font-size:11.5px; color:var(--faint); line-height:1.85; background:#FBF8F4; border:1px solid #F0E8DE; border-radius:9px; padding:7px 10px; margin:2px 0 4px;}
+.rule-legend b{color:#6b5f55;}
 /* ===== 备注 ===== */
 .note{display:flex; gap:9px; align-items:flex-start; padding:8px 0; border-bottom:1px dashed rgba(13,148,136,.12); font-size:13px;}
 .note:last-child{border-bottom:none;}
@@ -466,7 +477,7 @@ nav a.active svg{transform:translateY(-1px);}
 (function () {
   var KEY = "kaoqin_local_cloud_v1";     /* 本机存储：{v:2, items:{"<uid>":{d,t}}} */
   var KQ_APP = "kaoqin";                 /* 服务端槽位 */
-  var KQ_VER = "版本 2026-10-10d · 含 NAS 同步";   /* 只在 NAS 面板里显示；界面左下角不再显示版本 */
+  var KQ_VER = "版本 2026-10-10e · 含 NAS 同步";   /* 只在 NAS 面板里显示；界面左下角不再显示版本 */
   var realFetch = window.fetch ? window.fetch.bind(window) : null;
 
   /* ---------- 本机存储（按 uid 分开，每个 uid 一份 {d,t}） ---------- */
@@ -1137,27 +1148,58 @@ nav a.active svg{transform:translateY(-1px);}
         "' style='width:100%;box-sizing:border-box;padding:10px;border-radius:10px;border:1px solid #2a3040;" +
         "background:#12151c;color:#e6e8ee;font-size:13px;margin-bottom:8px'>";
     }
+    /* 面板小字统一排版：每条独立成块、间距一致、关键动作加粗（深色底上的配色语义） */
+    function kqChip(txt, kind) {
+      var c = kind === "key" ? "#ffb4b4" : (kind === "ok" ? "#8fe3a8" : (kind === "fill" ? "#ffd28a" : "#9aa3b2"));
+      return "<span style='color:" + c + ";font-weight:700'>" + txt + "</span>";
+    }
+    function kqP(txt, kind, extra) {
+      var c, bg, bd;
+      if (kind === "key") { c = "#ffc4c4"; bg = "#2a1a1e"; bd = "#5a2a30"; }
+      else if (kind === "fill") { c = "#ffdca8"; bg = "#2a2317"; bd = "#5a4a2a"; }
+      else if (kind === "ok") { c = "#8fe3a8"; bg = "#14261c"; bd = "#2a4a35"; }
+      else { c = "#9aa3b2"; bg = "#12151c"; bd = "#2a3040"; }
+      return "<div style='color:" + c + ";background:" + bg + ";border:1px solid " + bd + ";border-radius:9px;" +
+        "padding:8px 10px;margin:0 0 8px;font-size:11.5px;line-height:1.8;overflow-wrap:anywhere;word-break:break-word'>" +
+        txt + (extra || "") + "</div>";
+    }
+    function kqRule(t) {
+      return "<div style='font-size:11.5px;font-weight:700;color:#c3cbd8;margin:10px 0 5px'>" + t + "</div>";
+    }
     card.innerHTML =
       "<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:4px'>" +
       "<div style='font-size:15px;font-weight:600'>NAS 同步（多设备）</div>" +
       "<button id='ls-kq-x' style='background:none;border:none;color:#9aa3b2;font-size:22px;cursor:pointer'>×</button></div>" +
-      "<div style='font-size:11px;color:#6f7a8c;margin-bottom:8px'>" + KQ_VER + "</div>" +
+      "<div id='ls-kq-verline' style='font-size:11px;color:#6f7a8c;margin-bottom:8px'><span id='ls-kq-verstr'>" + KQ_VER + "</span></div>" +
+      "<div style='font-size:11.5px;color:#8b94a6;line-height:1.8;margin:0 0 8px'>颜色怎么看：" +
+      "<span style='color:#ffd28a;font-weight:700'>琥珀</span> ＝ 需要你自己填 / 自己选；" +
+      "<span style='color:#ffb4b4;font-weight:700'>红块</span> ＝ 一定要注意；" +
+      "<span style='color:#8fe3a8;font-weight:700'>绿字</span> ＝ 好消息（放心）</div>" +
       "<div id='ls-kq-status' style='font-size:12.5px;margin-bottom:10px'></div>" +
+      kqRule("① 连接（每台设备做一次）") +
       "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>服务器地址（飞牛 NAS，带端口）</div>" +
       inp("ls-kq-url", urlVal, "http://你的NAS地址:8080") +
       "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>使用者名字（NAS 上的登录名）</div>" +
       inp("ls-kq-user", c.user || kqUid(), "例如：测试号") +
-      "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>口令（在 NAS 任务脚本里设定的那个）</div>" +
+      "<div style='font-size:12.5px;color:#ffd28a;font-weight:700;margin-bottom:4px'>口令（在 NAS 任务脚本里设定的那个）</div>" +
       inp("ls-kq-pass", "", "登录口令", "password") +
       "<div style='display:flex;gap:8px;margin:6px 0 12px'>" +
       "<button id='ls-kq-connect' style='flex:1.4;padding:11px;border-radius:10px;border:none;background:#1f6f4a;color:#fff;font-weight:700;cursor:pointer'>连接并登录</button>" +
       "<button id='ls-kq-disconnect' style='flex:1;padding:11px;border-radius:10px;border:1px solid #5a2a30;background:#2a1a1e;color:#ffb4b4;cursor:pointer'>断开</button></div>" +
       /* 自助注册入口：只有服务端开放注册时才显示（见 nasCheckInvite）*/
       "<button id='ls-kq-register' style='display:none;width:100%;padding:10px;border-radius:10px;border:1px dashed #2c4a86;background:#141b2a;color:#9fc3ff;cursor:pointer;margin:0 0 10px'>注册新账号（有邀请码）</button>" +
-      "<div style='color:#8b94a6;font-size:11.5px;margin:0 0 8px'>忘记口令（NAS 账号口令）：找管理员在后台点「重设口令」即可（记录一条都不会丢），" +
-      "然后用新口令在每台设备上重连一次；若是你自己在本面板下面点「保存新口令」，那本机不用重连。" +
-      "有邀请码的同学，可在本面板点上面的「注册新账号（有邀请码）」自己注册；邀请码是大家共用的，别发到公开群里。</div>" +
+      kqRule("② 口令与账号") +
+      kqP("<b style='color:#c3cbd8'>忘记口令（NAS 账号口令）</b><br>" +
+          kqChip("①", "key") + " 找管理员，他在后台点「<b>重设口令</b>」即可（<b>记录一条都不会丢</b>）。<br>" +
+          kqChip("②", "key") + " 重设后，在每台设备上用<b>新口令</b>重连一次。<br>" +
+          kqChip("③", "ok") + " 若是你自己在下面点「保存新口令」，<b>本机不用重连</b>。", "key") +
+      kqP(kqChip("注册新账号（有邀请码）", "fill") + "<br>" +
+          kqChip("①") + " 邀请码（管理员给你的那一串）。<br>" +
+          kqChip("②") + " 自己起的名字（2–16 位：中文 / 字母 / 数字 / 下划线 / 短横线）。<br>" +
+          kqChip("③") + " 自己设的口令（≥4 位，输两遍）→ 点「注册并登录」。<br>" +
+          kqChip("④", "key") + " 邀请码是<b>大家共用</b>的：<b>别发到公开群里</b>。", "fill") +
       "<div style='border-top:1px solid #2a3040;margin:2px 0 10px'></div>" +
+      kqRule("③ 同步与备份（按顺序做）") +
       "<div style='display:flex;gap:8px;margin-bottom:8px'>" +
       "<button id='ls-kq-sync' style='flex:1.2;padding:11px;border-radius:10px;border:1px solid #2c4a86;background:#1b2e52;color:#cfe0ff;cursor:pointer'>立即同步</button>" +
       "<button id='ls-kq-overwrite' style='flex:1.4;padding:11px;border-radius:10px;border:1px solid #5a2a30;background:#2a1a1e;color:#ffb4b4;cursor:pointer'>覆盖本机（清理用）</button></div>" +
@@ -1167,16 +1209,20 @@ nav a.active svg{transform:translateY(-1px);}
       "<div style='display:flex;gap:8px;margin-bottom:8px'>" +
       "<button id='ls-kq-import' style='flex:1;padding:11px;border-radius:10px;border:1px solid #4a4630;background:#2c2a1a;color:#e8ddb0;cursor:pointer'>导入备份文件</button></div>" +
       "<input id='ls-kq-file' type='file' accept='.json,application/json' style='display:none'>" +
-      "<div style='color:#8b94a6;font-size:11.5px;margin:0 0 8px'>「上传备份」把本机这份考勤账本整份传到 NAS（以本机为准，不做合并；先记一条考勤再点，连点两次确认）。「下载 / 导入备份文件」用于换设备：文件为 {v:2,items} 结构，导入时按时间取新的，并自动上传一次。</div>" +
+      kqP(kqChip("① 上传备份", "key") + " 把本机这份考勤账本整份传到 NAS（<b>以本机为准</b>，不做合并）。<br>" +
+          kqChip("②", "key") + " 先记一条考勤再点，并且<b>连点两次</b>确认。", "key") +
+      kqP(kqChip("③ 下载 / 导入备份文件", "fill") + " 换设备用：文件为 <b>{v:2,items}</b> 结构，" +
+          "导入时按时间取新的，并自动上传一次。", "fill") +
       "<div style='border-top:1px solid #2a3040;margin:12px 0 8px'></div>" +
-      "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>修改口令（本机已连接时，原口令可留空）</div>" +
+      kqRule("④ 修改口令") +
+      "<div style='font-size:12.5px;color:#ffd28a;font-weight:700;margin-bottom:4px'>修改口令（本机已连接时，原口令可留空）</div>" +
       inp("ls-kq-old", "", "原口令", "password") +
       inp("ls-kq-new", "", "新口令（至少 4 位）", "password") +
       inp("ls-kq-new2", "", "再输一次新口令", "password") +
       "<button id='ls-kq-passwd' style='width:100%;padding:10px;border-radius:10px;border:1px solid #2c4a86;background:#1b2e52;color:#cfe0ff;cursor:pointer;margin-bottom:6px'>保存新口令</button>" +
       "<label style='display:flex;gap:8px;align-items:center;font-size:12.5px;color:#9aa3b2'>" +
       "<input id='ls-kq-auto' type='checkbox'" + ((c.auto === false) ? "" : " checked") + "> 打开页面时自动同步（保存后 3 秒也会自动补传）</label>" +
-      "<div style='color:#8b94a6;font-size:11.5px;margin-top:8px'>合并规则：每位使用者（口令 uid）各存一份，按时间戳取新的（相同保留本机）。" +
+      "<div style='color:#8b94a6;font-size:11.5px;line-height:1.8;margin-top:8px'>合并规则：每位使用者（口令 uid）各存一份，按时间戳取新的（相同保留本机）。" +
       "连不上时数据仍在本机，联网后再点「立即同步」即可补传。</div>" +
       "<div id='ls-kq-msg' style='margin-top:8px;font-size:12.5px;color:#9fd0ff'></div>";
     mask.appendChild(card);
@@ -1336,7 +1382,7 @@ nav a.active svg{transform:translateY(-1px);}
   if (document.readyState === "loading") { document.addEventListener("DOMContentLoaded", boot); }
   else { boot(); }
 })();
-</script><!-- kq-ver 2026-10-10d -->
+</script><!-- kq-ver 2026-10-10e -->
 <script>
 "use strict";
 /* ============================================================
@@ -2636,25 +2682,42 @@ function deleteIncome(id){
  * 工资规则说明
  * ============================================================ */
 function renderRules(){
-  const item = (n, t)=> '<div class="rule-item"><span class="rk">'+n+'</span><span class="rt">'+t+'</span></div>';
+  const item = (n, t, cls)=> '<div class="rule-item'+(cls ? ' '+cls : '')+'"><span class="rk">'+n+'</span><span class="rt">'+t+'</span></div>';
+  const li = (n, t)=> '<div class="ex">'+n+' '+t+'</div>';
+  const F = (t)=> '<span class="fill">'+t+'</span>';
   view.innerHTML =
     '<div class="card"><h3>考勤与工资计算规则</h3>'+
-      item("1","<b>每月工资</b>：月薪 ÷ 当月天数 = 日薪。月薪可自定义：点月度页工资卡 ✎ 单独设置本月，右上角管理可改默认值。")+
-      item("2","<b>每天工时（季节制）</b>：5月1日—11月30日 每天 8小时30分钟；12月1日—次年4月30日 每天 8小时。时薪 = 日薪 ÷ 每天工时。")+
-      item("3","<b>加班费</b>：加班小时 × 时薪。加班按天记录（点日期填加班小时数）。")+
-      item("4","<b>休班额度（30天月）</b>：当月30天可休 2 天不扣钱（<b>放假也算休班</b>，两者合计）。<div class=\"ex\">休 0 天（2天都没休）→ 额外多发 1 天工资，剩余 2 天积攒到下月；<br>休 1 天 → 不扣钱，剩余 1 天积攒到下月；<br>休 2 天 → 刚好额度，不奖不扣；<br>超过 2 天 → 每超 1 天扣 1 天工资。</div>")+
-      item("5","<b>休班额度（31天月）</b>：当月31天可休 3 天不扣钱（<b>放假也算休班</b>，两者合计）。<div class=\"ex\">休 1 天 → 剩余 2 天：其中 1 天叠加到下个月（积攒），另外 1 天如果上班就多发 1 天工资、如果休班也不扣工资；<br>休 2 天 → 剩余 1 天：如果上班就多发 1 天工资、如果休班也不扣工资，<b>不叠加到下月</b>；<br>休 3 天 → 刚好额度，不奖不扣；<br>休 0 天 → 按少休同样多发 1 天工资（可调整）；<br>超过 3 天 → 每超 1 天扣 1 天工资。</div>")+
+      '<div class="rule-legend">颜色怎么看：<b>琥珀</b> ＝ 需要你自己填 / 自己选；<b style="color:#8f231c">红块</b> ＝ 一定要注意；<b style="color:#1f6f4a">绿块</b> ＝ 好消息（放心）</div>'+
+      item("1","<b>每月工资</b>：月薪 ÷ 当月天数 = 日薪。<br>月薪可以自己改：点月度页工资卡 ✎ 只改本月；右上角管理改默认值。")+
+      item("2","<b>每天工时（季节制）</b>：<br>5月1日—11月30日 每天 <b>8小时30分钟</b>；12月1日—次年4月30日 每天 <b>8小时</b>。<br>时薪 = 日薪 ÷ 每天工时。")+
+      item("3","<b>加班费</b>：加班小时 × 时薪。<br>加班按天记录：点日期填加班小时数。")+
+      item("4","<b>休班额度（30天月）</b>：当月 30 天，可休 <b>2 天</b>不扣钱（<b>放假也算休班</b>，两者合计）。"+
+        li("①","休 0 天（2 天都没休）→ 额外多发 1 天工资，剩余 2 天积攒到下月；")+
+        li("②","休 1 天 → 不扣钱，剩余 1 天积攒到下月；")+
+        li("③","休 2 天 → 刚好额度，不奖不扣；")+
+        li("④","超过 2 天 → 每超 1 天扣 1 天工资。"))+
+      item("5","<b>休班额度（31天月）</b>：当月 31 天，可休 <b>3 天</b>不扣钱（<b>放假也算休班</b>，两者合计）。"+
+        li("①","休 1 天 → 剩余 2 天：其中 1 天叠加到下个月（积攒），另外 1 天如果上班就多发 1 天工资、如果休班也不扣工资；")+
+        li("②","休 2 天 → 剩余 1 天：如果上班就多发 1 天工资、如果休班也不扣工资，<b>不叠加到下月</b>；")+
+        li("③","休 3 天 → 刚好额度，不奖不扣；")+
+        li("④","休 0 天 → 按少休同样多发 1 天工资（可调整）；")+
+        li("⑤","超过 3 天 → 每超 1 天扣 1 天工资。"))+
       item("6","<b>积攒结转</b>：当月没休完的额度自动积攒到下月；下月休息先抵扣积攒天数（<b>延长休息不算工资</b>，不奖也不扣）。积攒跨年继续有效。")+
-      item("7","<b>2月特殊</b>：做几天发几天 —— 工资 = 日薪 × 实际出勤天数（班/加班按半天计）＋ 加班费，不参与休班额度与积攒。")+
-      item("8","<b>无考勤记录</b>：本月未记录任何考勤时，工资按源表预填值显示或待录入后计算；录入后自动按以上规则重算。")+
-      item("9","<b>放假 / 迟到</b>：放假与休班一样计入休班额度（30天月共 2 天、31天月共 3 天）；迟到只记录，不影响工资（可按需调整）。")+
+      item("7","<b>2月特殊</b>：做几天发几天 —— 工资 = 日薪 × 实际出勤天数（班 / 加班按半天计）＋ 加班费；<b>不参与休班额度与积攒</b>。")+
+      item("8","<b>无考勤记录</b>：本月没记录任何考勤时，工资按源表预填值显示，或等录入后再算；录入后自动按以上规则重算。")+
+      item("例","<b>30天月</b>：月薪 "+F("3000")+" → 日薪 "+F("100.00")+"。本月休 1 天：工资 "+F("3000")+"（不扣），剩余 1 天积攒。"+
+        li("→","下月（31 天）休 2 天：先抵扣积攒 1 天，实际少休 1 天 → 多发 1 天工资。"))+
+      item("例","<b>31天月</b>：月薪 "+F("3000")+" → 日薪 "+F("96.77")+"。本月休 1 天 → 多发 1 天工资（+"+F("96.77")+"），剩余 2 天积攒。")+
+      item("例","<b>加班</b>：夏季（8.5 小时 / 天）时薪 = "+F("96.77")+" ÷ 8.5 ≈ "+F("11.38")+" 元 / 小时，加班 5 小时 → +"+F("56.90")+" 元。")+
     '</div>'+
-    '<div class="card"><h3>示例</h3>'+
-      item("例","<b>30天月</b>：月薪3000 → 日薪100.00。本月休1天：工资3000（不扣），剩余1天积攒。<div class=\"ex\">下月（31天）休2天：先抵扣积攒1天，实际少休1天 → 多发1天工资。</div>")+
-      item("例","<b>31天月</b>：月薪3000 → 日薪96.77。本月休1天 → 多发1天工资（+96.77），剩余2天积攒。")+
-      item("例","<b>加班</b>：夏季（8.5小时/天）时薪 = 96.77 ÷ 8.5 ≈ 11.38 元/小时，加班 5 小时 → +56.90 元。")+
-    '</div>'+
-    '<div class="foot">规则有出入时告诉我，我随时调整算法</div>';
+    '<div class="card"><h3>特别注意</h3>'+
+      item("重","<b>先把考勤记全，再对工资</b>。工资是随时重算的：补录 / 改动某一天，当月与全年数字会跟着变。", "rule-key")+
+      item("重","<b>月薪改错了不影响历史</b>：默认值改的是以后的算法；只想改某个月，用那个月的 ✎ 单独设置。", "rule-key")+
+      item("重","<b>休班额度的积攒会跨月、跨年结转</b>：不要手工去改积攒天数，改休息记录更稳。", "rule-key")+
+      item("重","<b>2 月不参与休班额度与积攒</b>（做几天发几天）；放假 / 迟到按上面的规则计入或只记录。", "rule-key")+
+      item("好","放假与休班一样计入休班额度，<b>不额外扣钱</b>；迟到只记录，<b>不影响工资</b>（可按需调整）。", "rule-ok")+
+      item("好","<b>规则和你的实际有出入时告诉我，我随时调整算法。</b>", "rule-ok")+
+    '</div>';
   view.classList.remove("fade-in"); void view.offsetWidth; view.classList.add("fade-in");
 }
 function convCalc(){
