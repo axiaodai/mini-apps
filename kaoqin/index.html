@@ -459,14 +459,46 @@ nav a.active svg{transform:translateY(-1px);}
 <div id="toast"></div>
 
 <script>/* ==== 本地“云端”代理（公开版：不连任何服务器） ====================
-  原本 /save 与 /userdata 指向 NAS 上的服务；公开版改为读写浏览器本地存储，
+  原本 /save 与 /userdata 指向 NAS 上的服务；公开版默认改为读写浏览器本地存储，
   因此每个人的数据都在自己的浏览器里，互不可见，也不会上传。
+  需要多设备互通时，点左下角 ⇅ 连接自己的 NAS（独立槽位 kaoqin）。
   注：只拦截这两个路径，页面自身逻辑一行未改。                    */
 (function () {
-  var KEY = "kaoqin_local_cloud_v1";
+  var KEY = "kaoqin_local_cloud_v1";     /* 本机存储：{v:2, items:{"<uid>":{d,t}}} */
+  var KQ_APP = "kaoqin";                 /* 服务端槽位 */
+  var KQ_VER = "版本 2026-10-09a · 含 NAS 同步";
   var realFetch = window.fetch ? window.fetch.bind(window) : null;
-  function read() { try { var s = localStorage.getItem(KEY); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
-  function write(o) { try { localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) {} }
+
+  /* ---------- 本机存储（按 uid 分开，每个 uid 一份 {d,t}） ---------- */
+  function kqNorm(raw) {
+    if (!raw || typeof raw !== "object") { return { items: {} }; }
+    var out = {}, k;
+    if (raw.items && typeof raw.items === "object") {
+      for (k in raw.items) {
+        var r = raw.items[k];
+        if (r && typeof r === "object" && r.d !== undefined) { out[k] = { d: r.d, t: Number(r.t) || 0 }; }
+      }
+      return { items: out };
+    }
+    if (typeof raw.uid === "string") {   /* 旧格式（整份就是一个 uid 的数据）自动迁移 */
+      out[raw.uid] = { d: raw, t: Number(raw.ts) || 0 };
+    }
+    return { items: out };
+  }
+  function kqRead() {
+    try { return kqNorm(JSON.parse(localStorage.getItem(KEY) || "null")); }
+    catch (e) { return { items: {} }; }
+  }
+  function kqWrite(store) {
+    try { localStorage.setItem(KEY, JSON.stringify({ v: 2, items: (store && store.items) || {} })); return true; }
+    catch (e) { return false; }
+  }
+  function kqUid() {
+    try {
+      if (typeof UID === "string" && UID) { return UID; }
+    } catch (e) {}
+    try { return localStorage.getItem("kaoqin_uid") || ""; } catch (e) { return ""; }
+  }
   function reply(obj, status) {
     var bodyText = JSON.stringify(obj), code = status || 200;
     if (typeof Response === "function") {
@@ -497,19 +529,404 @@ nav a.active svg{transform:translateY(-1px);}
     var method = ((init.method || "GET") + "").toUpperCase();
     if (path === "/userdata" && method === "GET") {
       var uid = qs(url, "uid");
-      var db = read();
-      if (!db || (db.uid || "") !== uid) { return reply({ ok: false, error: "no data for this uid" }); }
-      return reply({ ok: true, data: db });
+      var db = kqRead(), rec = db.items[uid];
+      if (!rec) { return reply({ ok: false, error: "no data for this uid" }); }
+      return reply({ ok: true, data: rec.d });
     }
     if (path === "/save" && method === "POST") {
       var body = null;
       try { body = init.body ? JSON.parse(init.body) : null; } catch (e) { return reply({ ok: false, error: "bad json" }, 400); }
       if (!body || typeof body !== "object") { return reply({ ok: false, error: "empty payload" }, 400); }
-      write(body);
+      var bUid = (typeof body.uid === "string") ? body.uid : "";
+      var store = kqRead();
+      store.items[bUid] = { d: body, t: Number(body.ts) || Date.now() };
+      kqWrite(store);
+      kqSchedulePush();                  /* 写完本机 → 3 秒去抖推送一次 */
       return reply({ ok: true, ts: body.ts || null, local: true });
     }
     return reply({ ok: false, error: "unsupported" }, 405);
   };
+
+  /* ---------- NAS 同步（多设备互通，独立槽位 kaoqin） ---------- */
+  var NAS_KEY = "mini-apps-nas-v1";      /* 与献血/跑步页共用：那边连过这里就是已连接 */
+  var KQ_STATE = { busy: false, lastMsg: "", pending: false, lastSync: 0, lastErr: "" };
+
+  function nasCfg() {
+    try { return JSON.parse(localStorage.getItem(NAS_KEY) || "null"); } catch (e) { return null; }
+  }
+  function nasSaveCfg(c) {
+    try {
+      if (c === null || c === undefined) { localStorage.removeItem(NAS_KEY); }
+      else { localStorage.setItem(NAS_KEY, JSON.stringify(c || {})); }
+    } catch (e) {}
+  }
+  function nasBase() {
+    var c = nasCfg();
+    return (c && c.url) ? String(c.url).replace(/\/+$/, "") : "";
+  }
+  function nasConfigured() {
+    var c = nasCfg();
+    return !!(c && c.url && c.token && c.user);
+  }
+  function nasReq(method, path, body) {
+    var c = nasCfg();
+    var url = nasBase() + path;
+    var opts = { method: method, headers: {}, cache: "no-store" };
+    if (c && c.token) { opts.headers["Authorization"] = "Bearer " + c.token; }
+    if (body !== undefined) { opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(body); }
+    return fetch(url, opts).then(function (r) {
+      return r.text().then(function (t) {
+        var j = null;
+        try { j = JSON.parse(t); } catch (e) {}
+        return { status: r.status, ok: r.ok, body: j, raw: t };
+      });
+    });
+  }
+  function nasHint(err) {
+    var m = String((err && err.message) || err || "");
+    if (/Failed to fetch|NetworkError|load failed|Network request failed/i.test(m)) {
+      return "连不上 NAS。检查：① 手机是否和 NAS 在同一网络（或已做端口映射）② 地址是否带 http:// 和端口 ③ 若本页是 https 而地址是 http，浏览器会拦（改从 NAS 提供的地址打开页面）";
+    }
+    return m || "同步失败";
+  }
+  function kqCanon(o) {                  /* 稳定序列化：键排序，避免键序不同被误判成“有变化” */
+    if (o === null || o === undefined || typeof o !== "object") { return JSON.stringify(o === undefined ? null : o); }
+    if (Object.prototype.toString.call(o) === "[object Array]") {
+      return "[" + o.map(kqCanon).join(",") + "]";
+    }
+    var ks = Object.keys(o).sort();
+    return "{" + ks.map(function (k) { return JSON.stringify(k) + ":" + kqCanon(o[k]); }).join(",") + "}";
+  }
+  function escH(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  /* 登录并保存配置（与另两个公开页共用同一份配置） */
+  function nasLogin(url, user, pass) {
+    var base = String(url || "").replace(/\/+$/, "");
+    if (!/^https?:\/\//.test(base)) { base = "http://" + base; }
+    return fetch(base + "/api/login", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user: user, pass: pass })
+    }).then(function (r) {
+      return r.json().then(function (j) {
+        if (!r.ok || !j.ok) { throw new Error(j.error || "登录失败"); }
+        var old = nasCfg() || {};
+        nasSaveCfg({ url: base, user: j.user, token: j.token, auto: (old.auto === false) ? false : true });
+        return j;
+      });
+    });
+  }
+
+  /* 拉取合并：每个 uid 比 ts，大者胜（相同保留本机） */
+  function kqMergeInto(remoteItems, store) {
+    var changed = 0, uid, r, rt, mine, mt;
+    for (uid in (remoteItems || {})) {
+      if (!Object.prototype.hasOwnProperty.call(remoteItems, uid)) { continue; }
+      r = remoteItems[uid];
+      if (!r || typeof r !== "object" || r.d === undefined) { continue; }
+      rt = Number(r.t) || 0;
+      mine = store.items[uid];
+      mt = mine ? (Number(mine.t) || 0) : -1;
+      if (!mine || rt > mt) { store.items[uid] = { d: r.d, t: rt }; changed++; }
+    }
+    return changed;
+  }
+  function kqOneUrl() {
+    var c = nasCfg() || {};
+    return "/api/one?user=" + encodeURIComponent(c.user) + "&app=" + KQ_APP;
+  }
+  function nasSyncKind(round, mode) {
+    round = round || 0;
+    if (!nasConfigured()) { return Promise.resolve({ ok: false, msg: "未连接 NAS" }); }
+    return nasReq("GET", kqOneUrl()).then(function (g) {
+      if (g.status === 401) { throw new Error("登录已过期，请重新连接"); }
+      if (!g.ok || !g.body || !g.body.ok) { throw new Error((g.body && g.body.error) || ("读取失败 " + g.status)); }
+      var remote = g.body.data, rev = g.body.rev;
+      var remoteItems = (remote && remote.items) ? remote.items : {};
+      var store = kqRead();
+      var pulled = kqMergeInto(remoteItems, store);
+      if (pulled) { kqWrite(store); }
+      if (mode === "download") { return { ok: true, rev: rev, pulled: pulled, pushed: false }; }
+      var mine = kqRead().items;
+      if (kqCanon(remoteItems) === kqCanon(mine)) { return { ok: true, rev: rev, pulled: pulled, pushed: false }; }
+      return nasReq("PUT", kqOneUrl(), { baseRev: rev, data: { v: 1, items: mine } }).then(function (p) {
+        if (p.status === 409 && round < 3) { return nasSyncKind(round + 1, mode); }  /* 别人刚改过 → 重取再合并 */
+        if (!p.ok || !p.body || !p.body.ok) { throw new Error((p.body && p.body.error) || ("写入失败 " + p.status)); }
+        return { ok: true, rev: p.body.rev, pulled: pulled, pushed: true };
+      });
+    });
+  }
+  /* 页面数据刷新：优先调用页面自己的刷新函数，没有就整页重载一次（防死循环） */
+  function kqRefreshPage() {
+    try {
+      if (typeof loadFromServer === "function") { loadFromServer(); return true; }
+      if (typeof loadAllData === "function") {
+        loadAllData();
+        if (typeof renderPersonSwitch === "function") { renderPersonSwitch(); }
+        if (typeof render === "function") { render(); }
+        return true;
+      }
+    } catch (e) {}
+    try {
+      if (sessionStorage.getItem("kaoqin_nas_reloaded")) { return false; }
+      sessionStorage.setItem("kaoqin_nas_reloaded", "1");
+      location.reload();
+      return true;
+    } catch (e) { return false; }
+  }
+  function nasSync(reason) {
+    if (!nasConfigured()) { return Promise.resolve({ ok: false, msg: "未连接 NAS（请先连接并登录）" }); }
+    if (KQ_STATE.busy) { return Promise.resolve({ ok: false, msg: "正在同步中" }); }
+    KQ_STATE.busy = true; KQ_STATE.lastMsg = "同步中…"; kqPaintStatus();
+    return nasSyncKind(0, "both").then(function (r) {
+      KQ_STATE.busy = false; KQ_STATE.pending = false; KQ_STATE.lastErr = "";
+      KQ_STATE.lastSync = Date.now();
+      try { var c = nasCfg() || {}; c.lastSync = KQ_STATE.lastSync; nasSaveCfg(c); } catch (e) {}
+      KQ_STATE.lastMsg = "已同步（" + (r.pushed ? "本机改动已上传" : "无需上传") +
+        (r.pulled ? "，拉回 " + r.pulled + " 份" : "") + "，" + (reason || "手动") + "）";
+      if (r.pulled) { kqRefreshPage(); }
+      kqPaintStatus(); kqPaintMsg(KQ_STATE.lastMsg, true);
+      return { ok: true, msg: KQ_STATE.lastMsg, pulled: r.pulled, pushed: r.pushed };
+    }).catch(function (e) {
+      KQ_STATE.busy = false; KQ_STATE.pending = true; KQ_STATE.lastErr = nasHint(e);
+      KQ_STATE.lastMsg = "同步失败：" + KQ_STATE.lastErr;
+      kqPaintStatus(); kqPaintMsg(KQ_STATE.lastMsg, false);
+      return { ok: false, msg: KQ_STATE.lastMsg, error: KQ_STATE.lastErr };
+    });
+  }
+  /* 覆盖本机（清理用）：用服务器数据整份替换本机，本机多出来的 uid 会被清掉 */
+  function nasOverwrite() {
+    if (!nasConfigured()) { return Promise.resolve({ ok: false, msg: "未连接 NAS（请先连接并登录）" }); }
+    return nasReq("GET", kqOneUrl()).then(function (g) {
+      if (g.status === 401) { throw new Error("登录已过期，请重新连接"); }
+      if (!g.ok || !g.body || !g.body.ok) { throw new Error((g.body && g.body.error) || ("读取失败 " + g.status)); }
+      var remote = g.body.data;
+      var items = (remote && remote.items) ? remote.items : {};
+      var clean = {}, uid;
+      for (uid in items) {
+        if (!Object.prototype.hasOwnProperty.call(items, uid)) { continue; }
+        clean[uid] = { d: items[uid].d, t: Number(items[uid].t) || 0 };
+      }
+      kqWrite({ items: clean });
+      /* 让页面自己的 cloudTs 归零，否则页面会拿内存里的旧数据反推回本机 */
+      try {
+        var u = kqUid();
+        if (u) { localStorage.removeItem("kaoqin_cloud_ts_" + u); }
+      } catch (e) {}
+      kqRefreshPage();
+      var n = Object.keys(clean).length;
+      return { ok: true, msg: "已用服务器数据覆盖本机（" + n + " 份使用者数据）", count: n };
+    }).catch(function (e) {
+      var m = nasHint(e);
+      kqPaintMsg("覆盖失败：" + m, false);
+      return { ok: false, msg: "覆盖失败：" + m };
+    });
+  }
+  function kqAutoSync(reason) {
+    if (!nasConfigured()) { return; }
+    var c = nasCfg();
+    if (c && c.auto === false) { return; }
+    nasSync(reason || "自动");
+  }
+  var __kqPushTimer = null;
+  function kqSchedulePush() {
+    if (!nasConfigured()) { return; }
+    clearTimeout(__kqPushTimer);
+    __kqPushTimer = setTimeout(function () { kqAutoSync("保存后"); }, 3000);
+  }
+  window.addEventListener("online", function () { kqAutoSync("网络恢复"); });
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible") { kqAutoSync("回到前台"); }
+  });
+
+  /* ---------- 状态显示 ---------- */
+  function kqWhen(ts) {
+    if (!ts) { return "尚未同步"; }
+    var t = new Date(ts);
+    return (t.getMonth() + 1) + "月" + t.getDate() + "日 " +
+      ("0" + t.getHours()).slice(-2) + ":" + ("0" + t.getMinutes()).slice(-2);
+  }
+  function kqPaintStatus() {
+    var el = document.getElementById("ls-kq-status");
+    if (!el) { return; }
+    var c = nasCfg();
+    if (!c || !c.token) { el.textContent = "未连接（数据只在本机）"; el.style.color = "#9aa3b2"; return; }
+    var ts = KQ_STATE.lastSync || (c.lastSync ? Number(c.lastSync) : 0);
+    el.textContent = "已连接 " + c.user + " @ " + String(c.url || "").replace(/^https?:\/\//, "") +
+      "　最后同步：" + kqWhen(ts) + (KQ_STATE.pending ? "　有未上传的数据" : "");
+    el.style.color = KQ_STATE.pending ? "#ffd28a" : "#8fe3a8";
+  }
+  function kqPaintMsg(t, ok) {
+    var el = document.getElementById("ls-kq-msg");
+    if (!el) { return; }
+    el.style.color = ok ? "#8fe3a8" : "#ffb4b4";
+    el.textContent = t || "";
+  }
+
+  /* ---------- 左下角小圆按钮 + 紧凑面板 ---------- */
+  function kqEnsureUI() {
+    if (!document.body || document.getElementById("ls-kq-btn")) { return; }
+    var ver = document.createElement("div");
+    ver.id = "ls-kq-ver";
+    ver.textContent = "版本 2026-10-09a";
+    ver.style.cssText = "position:fixed;left:9px;bottom:calc(136px + env(safe-area-inset-bottom));z-index:86;" +
+      "font-size:10px;line-height:1;color:rgba(13,148,136,.72);pointer-events:none;font-weight:700";
+    var btn = document.createElement("button");
+    btn.id = "ls-kq-btn";
+    btn.type = "button";
+    btn.title = KQ_VER;
+    btn.setAttribute("aria-label", "NAS 同步");
+    btn.textContent = "⇅";
+    btn.style.cssText = "position:fixed;left:8px;bottom:calc(92px + env(safe-area-inset-bottom));z-index:86;" +
+      "width:40px;height:40px;padding:0;border-radius:50%;border:1px solid rgba(13,148,136,.35);" +
+      "background:rgba(255,255,255,.92);color:#0d9488;font-size:17px;line-height:1;cursor:pointer;" +
+      "display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px -5px rgba(14,42,34,.4)";
+    btn.addEventListener("click", showNas);
+    document.body.appendChild(ver);
+    document.body.appendChild(btn);
+  }
+
+  function showNas() {
+    var old = document.getElementById("ls-kq");
+    if (old && old.parentNode) { old.parentNode.removeChild(old); }
+    var c = nasCfg() || {};
+    var autoOrigin = (location.protocol === "http:" || location.protocol === "https:") ? location.origin : "";
+    var urlVal = c.url || autoOrigin || "";
+    var mask = document.createElement("div");
+    mask.id = "ls-kq";
+    mask.style.cssText = "position:fixed;inset:0;z-index:87;background:rgba(8,10,14,.72);" +
+      "display:flex;align-items:center;justify-content:center;padding:18px";
+    mask.addEventListener("click", function (e) { if (e.target === mask) { mask.remove(); } });
+    var card = document.createElement("div");
+    card.style.cssText = "background:#171a21;border:1px solid #2a3040;border-radius:14px;padding:16px;" +
+      "max-width:400px;width:100%;max-height:88vh;overflow-y:auto;color:#e6e8ee;" +
+      "font:13px/1.7 -apple-system,'Microsoft YaHei',sans-serif";
+    function inp(id, val, ph, type) {
+      return "<input id='" + id + "' type='" + (type || "text") + "' value='" + escH(val) + "' placeholder='" + escH(ph || "") +
+        "' style='width:100%;box-sizing:border-box;padding:10px;border-radius:10px;border:1px solid #2a3040;" +
+        "background:#12151c;color:#e6e8ee;font-size:13px;margin-bottom:8px'>";
+    }
+    card.innerHTML =
+      "<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:4px'>" +
+      "<div style='font-size:15px;font-weight:600'>NAS 同步（多设备）</div>" +
+      "<button id='ls-kq-x' style='background:none;border:none;color:#9aa3b2;font-size:22px;cursor:pointer'>×</button></div>" +
+      "<div style='font-size:11px;color:#6f7a8c;margin-bottom:8px'>" + KQ_VER + "</div>" +
+      "<div id='ls-kq-status' style='font-size:12.5px;margin-bottom:10px'></div>" +
+      "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>服务器地址（飞牛 NAS，带端口）</div>" +
+      inp("ls-kq-url", urlVal, "http://你的NAS地址:8080") +
+      "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>使用者名字（NAS 上的登录名）</div>" +
+      inp("ls-kq-user", c.user || kqUid(), "例如：测试号") +
+      "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>口令（在 NAS 任务脚本里设定的那个）</div>" +
+      inp("ls-kq-pass", "", "登录口令", "password") +
+      "<div style='display:flex;gap:8px;margin:6px 0 12px'>" +
+      "<button id='ls-kq-connect' style='flex:1.4;padding:11px;border-radius:10px;border:none;background:#1f6f4a;color:#fff;font-weight:700;cursor:pointer'>连接并登录</button>" +
+      "<button id='ls-kq-disconnect' style='flex:1;padding:11px;border-radius:10px;border:1px solid #5a2a30;background:#2a1a1e;color:#ffb4b4;cursor:pointer'>断开</button></div>" +
+      "<div style='border-top:1px solid #2a3040;margin:2px 0 10px'></div>" +
+      "<div style='display:flex;gap:8px;margin-bottom:8px'>" +
+      "<button id='ls-kq-sync' style='flex:1.2;padding:11px;border-radius:10px;border:1px solid #2c4a86;background:#1b2e52;color:#cfe0ff;cursor:pointer'>立即同步</button>" +
+      "<button id='ls-kq-overwrite' style='flex:1.4;padding:11px;border-radius:10px;border:1px solid #5a2a30;background:#2a1a1e;color:#ffb4b4;cursor:pointer'>覆盖本机（清理用）</button></div>" +
+      "<div style='border-top:1px solid #2a3040;margin:12px 0 8px'></div>" +
+      "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>修改口令（本机已连接时，原口令可留空）</div>" +
+      inp("ls-kq-old", "", "原口令", "password") +
+      inp("ls-kq-new", "", "新口令（至少 4 位）", "password") +
+      inp("ls-kq-new2", "", "再输一次新口令", "password") +
+      "<button id='ls-kq-passwd' style='width:100%;padding:10px;border-radius:10px;border:1px solid #2c4a86;background:#1b2e52;color:#cfe0ff;cursor:pointer;margin-bottom:6px'>保存新口令</button>" +
+      "<label style='display:flex;gap:8px;align-items:center;font-size:12.5px;color:#9aa3b2'>" +
+      "<input id='ls-kq-auto' type='checkbox'" + ((c.auto === false) ? "" : " checked") + "> 打开页面时自动同步（保存后 3 秒也会自动补传）</label>" +
+      "<div style='color:#8b94a6;font-size:11.5px;margin-top:8px'>合并规则：每位使用者（口令 uid）各存一份，按时间戳取新的（相同保留本机）。" +
+      "连不上时数据仍在本机，联网后再点「立即同步」即可补传。</div>" +
+      "<div id='ls-kq-msg' style='margin-top:8px;font-size:12.5px;color:#9fd0ff'></div>";
+    mask.appendChild(card);
+    document.body.appendChild(mask);
+    kqPaintStatus();
+    document.getElementById("ls-kq-x").addEventListener("click", function () { mask.remove(); });
+    /* 地址自动识别时锁定输入框，只让用户填口令 */
+    (function () {
+      var uf = document.getElementById("ls-kq-url");
+      if (!uf) { return; }
+      if (!c.url && autoOrigin) {
+        uf.value = autoOrigin; uf.readOnly = true; uf.style.opacity = ".75";
+        var tip = document.createElement("div");
+        tip.style.cssText = "font-size:11.5px;color:#8fe3a8;margin:-4px 0 8px";
+        tip.textContent = "✓ 服务器地址已自动识别（你只需填口令）";
+        uf.parentNode.insertBefore(tip, uf.nextSibling);
+      }
+    })();
+    document.getElementById("ls-kq-connect").addEventListener("click", function () {
+      var url = document.getElementById("ls-kq-url").value.trim();
+      var user = document.getElementById("ls-kq-user").value.trim();
+      var pass = document.getElementById("ls-kq-pass").value;
+      if (!url || !user || !pass) { kqPaintMsg("请把地址、使用者、口令都填上", false); return; }
+      kqPaintMsg("连接中…", true);
+      nasLogin(url, user, pass).then(function (j) {
+        kqPaintMsg("登录成功，正在同步…", true);
+        kqPaintStatus();
+        return nasSync("连接后");
+      }).then(function (r) {
+        kqPaintMsg((r && r.ok) ? ("已连接并同步完成：" + r.msg) : ("登录成功，" + ((r && r.msg) || "同步失败")), !!(r && r.ok));
+        kqPaintStatus();
+      }).catch(function (e) { kqPaintMsg(nasHint(e), false); });
+    });
+    document.getElementById("ls-kq-disconnect").addEventListener("click", function () {
+      nasSaveCfg(null);
+      KQ_STATE.lastSync = 0; KQ_STATE.pending = false; KQ_STATE.lastErr = "";
+      kqPaintMsg("已断开（本机数据不受影响）", true);
+      kqPaintStatus();
+    });
+    document.getElementById("ls-kq-auto").addEventListener("change", function () {
+      var cc = nasCfg() || {};
+      cc.auto = this.checked;
+      nasSaveCfg(cc);
+      kqPaintMsg(this.checked ? "已开启自动同步" : "已关闭自动同步（仍可手动同步）", true);
+    });
+    document.getElementById("ls-kq-sync").addEventListener("click", function () {
+      nasSync("手动").then(function (r) { kqPaintMsg(r.msg, r.ok); });
+    });
+    document.getElementById("ls-kq-overwrite").addEventListener("click", function () {
+      var btn = this;
+      if (btn.getAttribute("data-armed") !== "1") {
+        btn.setAttribute("data-armed", "1");
+        btn.textContent = "再点一次：确认覆盖";
+        kqPaintMsg("会用服务器上的数据覆盖本机（本机多出来的那份会被清掉，服务器上的一条不动），再点一次确认", false);
+        return;
+      }
+      btn.removeAttribute("data-armed");
+      btn.textContent = "覆盖本机（清理用）";
+      kqPaintMsg("正在从服务器拉取…", true);
+      nasOverwrite().then(function (r) { kqPaintMsg(r.msg, r.ok); kqPaintStatus(); });
+    });
+    document.getElementById("ls-kq-passwd").addEventListener("click", function () {
+      var cc = nasCfg() || {};
+      var user = ((document.getElementById("ls-kq-user") || {}).value || "").trim() || cc.user;
+      var oldp = (document.getElementById("ls-kq-old") || {}).value || "";
+      var n1 = (document.getElementById("ls-kq-new") || {}).value || "";
+      var n2 = (document.getElementById("ls-kq-new2") || {}).value || "";
+      if (!user) { kqPaintMsg("请先填使用者名字", false); return; }
+      if (n1.length < 4) { kqPaintMsg("新口令至少 4 位", false); return; }
+      if (n1 !== n2) { kqPaintMsg("两次输入的新口令不一致", false); return; }
+      kqPaintMsg("正在修改口令…", true);
+      nasReq("POST", "/api/passwd", { user: user, old: oldp, new: n1 }).then(function (r) {
+        if (!r.ok || !r.body || !r.body.ok) { throw new Error((r.body && r.body.error) || ("修改失败 " + r.status)); }
+        var c2 = nasCfg() || {};
+        c2.token = r.body.token; c2.user = r.body.user;
+        nasSaveCfg(c2);
+        ["ls-kq-old", "ls-kq-new", "ls-kq-new2"].forEach(function (id) {
+          var el = document.getElementById(id); if (el) { el.value = ""; }
+        });
+        kqPaintMsg("口令已修改，其它设备要用新口令重新连接一次（本机不用）", true);
+        kqPaintStatus();
+      }).catch(function (e) { kqPaintMsg(nasHint(e), false); });
+    });
+  }
+
+  /* 调试/测试入口 */
+  window.__lsNasKaoqin = {
+    cfg: nasCfg, save: nasSaveCfg, login: nasLogin, sync: nasSync, overwrite: nasOverwrite
+  };
+
   function notice() {
     var FLAG = "kaoqin_local_notice_v1";
     try { if (localStorage.getItem(FLAG)) return; } catch (e) { return; }
@@ -518,6 +935,7 @@ nav a.active svg{transform:translateY(-1px);}
       "border:1px solid #2a3040;border-radius:12px;padding:10px 12px;font:13px/1.6 -apple-system,'Microsoft YaHei',sans-serif;" +
       "box-shadow:0 6px 18px rgba(0,0,0,.45)";
     box.innerHTML = "<b>公开示例版：数据只保存在你自己的浏览器里</b>，不连任何服务器、也不会上传。" +
+      "想多设备互通，点左下角 ⇅ 连接你自己的 NAS（可选）。" +
       "换设备或清理浏览器数据前，请先用页面里的「备份 / 导出」保存一份。";
     var ok = document.createElement("button");
     ok.textContent = "知道了";
@@ -529,8 +947,14 @@ nav a.active svg{transform:translateY(-1px);}
     box.appendChild(ok);
     document.body.appendChild(box);
   }
-  if (document.readyState === "loading") { document.addEventListener("DOMContentLoaded", notice); }
-  else { notice(); }
+  function boot() {
+    kqEnsureUI();
+    notice();
+    /* 打开页面时自动同步（auto !== false 时），稍等页面自身启动完成 */
+    setTimeout(function () { kqAutoSync("打开页面"); }, 900);
+  }
+  if (document.readyState === "loading") { document.addEventListener("DOMContentLoaded", boot); }
+  else { boot(); }
 })();
 </script>
 <script>
