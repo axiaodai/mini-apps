@@ -831,91 +831,6 @@ html, body { max-width: 100%; overflow-x: hidden; }
 
 <script src="../vendor/echarts.min.js" integrity="sha384-pPi0zxBAoDu6+JXW/C68UZLvBUUtU+7zonhif43rqj7pxsGyqyqzcian2Rj37Rss" crossorigin="anonymous"></script>
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 <script>/* ==== 本地存储代理（公开版：不连服务器 · 按使用者隔离） ====
    这些页面原本调用 NAS 上的 /api/*；公开版改为读写浏览器本地存储。
    同一台设备上可以有多位使用者，各自的数据互不可见。
@@ -925,6 +840,187 @@ html, body { max-width: 100%; overflow-x: hidden; }
   var BASE_KEY = "mini-apps-running-v1";
   var PROF_KEY = "mini-apps-profiles-v1";
   var realFetch = window.fetch ? window.fetch.bind(window) : null;
+  /* ==== 图表区域缩放（双指捏合 / 滚轮缩放 / 拖动平移 / 双击还原）========
+     给「有类目横轴 + 柱/线」的趋势图自动挂上 dataZoom(inside)：
+       手机 = 双指捏合缩放 + 单指拖动平移；电脑 = 滚轮缩放 + 按住拖动平移；
+       双击图表还原（dispatchAction dataZoom start 0 / end 100）。
+     minValueSpan:2 防止缩到只剩一根柱子；类目 <= 4 时不强制。
+     献血「每月献血趋势」用 setOption(option, true) 重画，会把 dataZoom 一起清掉，
+     因此在 setOption 外面包一层：notMerge 时把 dataZoom 一并带上，
+     普通合并时只在缺失时补一次（已经缩放过的范围不会被重置）。
+     另在图表标题下方加一行 11px 灰字操作提示，位于图表容器之外，不遮挡图形。
+     window.__lsChartZoom 暴露给自检脚本用。 */
+  var lsChartZoom = (function () {
+    var HINT = "双指放大 / 滚轮缩放 · 拖动平移 · 双击还原";
+    var MARK = "_lsZoomHooked";
+
+    function axisList(o) {
+      var xs = o && o.xAxis;
+      if (!xs) { return []; }
+      return Array.isArray(xs) ? xs : [xs];
+    }
+    function catCount(o) {
+      var xs = axisList(o);
+      for (var i = 0; i < xs.length; i++) {
+        if (xs[i] && Array.isArray(xs[i].data)) { return xs[i].data.length; }
+      }
+      return 0;
+    }
+    function hasTrend(o) {
+      if (!o || typeof o !== "object") { return false; }
+      var xs = axisList(o), hasCat = false;
+      for (var i = 0; i < xs.length; i++) {
+        if (xs[i] && Array.isArray(xs[i].data)) { hasCat = true; break; }
+      }
+      if (!hasCat) { return false; }
+      var ss = o.series;
+      if (!ss) { return false; }
+      if (!Array.isArray(ss)) { ss = [ss]; }
+      for (var j = 0; j < ss.length; j++) {
+        var ty = ss[j] && ss[j].type;
+        if (ty === "bar" || ty === "line") { return true; }
+      }
+      return false;
+    }
+    function cfg(n) {
+      var dz = { type: "inside", xAxisIndex: 0, zoomOnMouseWheel: true, moveOnMouseWheel: true,
+                 moveOnMouseMove: true, throttle: 50 };
+      if (n > 4) { dz.minValueSpan = 2; }
+      return dz;
+    }
+    /* 同一批类目重画（resize / 数据刷新）时保留用户当前的缩放范围；
+       类目数变了（新月份入账）才回到全量，免得缩在一个跟数据对不上的窗口里。 */
+    function oldRange(chart, n) {
+      try {
+        var o = chart.getOption() || {};
+        var d = (o.dataZoom || [])[0];
+        if (!d || !n) { return null; }
+        if (catCount(o) !== n) { return null; }
+        if (Number(d.start) === 0 && Number(d.end) === 100) { return null; }
+        return { start: d.start, end: d.end };
+      } catch (e) { return null; }
+    }
+    function hasZoom(chart) {
+      try { var z = (chart.getOption() || {}).dataZoom; return !!(z && z.length); } catch (e) { return false; }
+    }
+    function addHint(host) {
+      try {
+        if (!host || !host.parentNode || !host.id) { return null; }
+        var id = host.id + "-zoom-hint";
+        var old = document.getElementById(id);
+        if (old) { return old; }
+        var d = document.createElement("div");
+        d.id = id;
+        d.className = "chart-note ls-zoom-hint";
+        d.textContent = HINT;
+        d.style.cssText = "font-size:11px;color:var(--ink3,#98837B);margin:6px 2px 0;" +
+                          "line-height:1.5;overflow-wrap:anywhere;text-align:left;font-weight:400";
+        host.parentNode.insertBefore(d, host);
+        return d;
+      } catch (e) { return null; }
+    }
+    function bindDbl(chart, host) {
+      try {
+        if (!host || !host.addEventListener || host[MARK + "Dbl"]) { return; }
+        host[MARK + "Dbl"] = true;
+        host.addEventListener("dblclick", function () {
+          try { chart.dispatchAction({ type: "dataZoom", start: 0, end: 100 }); } catch (e) {}
+        });
+      } catch (e) {}
+    }
+    function after(chart, host, orig) {
+      try {
+        var o = chart.getOption() || {};
+        if (!hasTrend(o)) { return false; }
+        var n = catCount(o);
+        var dz = (o.dataZoom || [])[0];
+        if (!dz) {
+          orig.call(chart, { dataZoom: [cfg(n)] });                  /* 还没有 dataZoom → 整块补上 */
+        } else if (n > 4 && Number(dz.minValueSpan) !== 2) {
+          /* 首屏没数据（类目 0）时挂上的 dataZoom 没有 minValueSpan，
+             数据到齐后类目变多 → 只补这一个字段，已缩放的范围（start/end）不动 */
+          orig.call(chart, { dataZoom: [{ minValueSpan: 2 }] });
+        }
+        addHint(host);
+        bindDbl(chart, host);
+        return true;
+      } catch (e) { return false; }
+    }
+    function decorate(chart, host) {
+      try {
+        if (!chart || chart[MARK]) { return false; }
+        chart[MARK] = true;
+        var orig = chart.setOption;
+        chart.setOption = function (o, notMerge, lazy) {
+          var use = o;
+          try {
+            if (hasTrend(o) && (notMerge === true || !hasZoom(this))) {
+              var copy = {}, k;
+              for (k in o) { if (Object.prototype.hasOwnProperty.call(o, k)) { copy[k] = o[k]; } }
+              var fresh = cfg(catCount(o)), keep = oldRange(this, catCount(o));
+              if (keep) { fresh.start = keep.start; fresh.end = keep.end; }
+              copy.dataZoom = [fresh];
+              use = copy;
+            }
+          } catch (e) {}
+          var out = orig.call(this, use, notMerge, lazy);
+          try { after(this, host, orig); } catch (e) {}
+          return out;
+        };
+        after(chart, host, orig);
+        return true;
+      } catch (e) { return false; }
+    }
+    function scan() {
+      try {
+        if (!window.echarts) { return 0; }
+        var n = 0;
+        var list = document.querySelectorAll("div[_echarts_instance_]");
+        for (var i = 0; i < list.length; i++) {
+          var c = null;
+          try { c = window.echarts.getInstanceByDom(list[i]); } catch (e) { c = null; }
+          if (c && decorate(c, list[i])) { n++; }
+        }
+        var boxes = document.querySelectorAll(".chart-box");
+        for (var j = 0; j < boxes.length; j++) { addHint(boxes[j]); }
+        return n;
+      } catch (e) { return 0; }
+    }
+    function hookInit() {
+      try {
+        if (!window.echarts) { return false; }
+        if (window.echarts[MARK]) { return true; }
+        var origInit = window.echarts.init;
+        window.echarts.init = function (dom) {
+          var c = origInit.apply(this, arguments);
+          try { decorate(c, dom); } catch (e) {}
+          return c;
+        };
+        window.echarts[MARK] = true;
+        return true;
+      } catch (e) { return false; }
+    }
+    function boot() {
+      hookInit();
+      scan();
+      var n = 0, timer = setInterval(function () {
+        n++;
+        hookInit();
+        scan();
+        if (n > 60) { clearInterval(timer); }
+      }, 50);
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", function () { hookInit(); scan(); });
+      }
+      window.addEventListener("load", function () { hookInit(); scan(); });
+      [200, 600, 1500, 3000].forEach(function (ms) {
+        setTimeout(function () { hookInit(); scan(); }, ms);
+      });
+    }
+    boot();
+    return { scan: scan, decorate: decorate, cfg: cfg, hasTrend: hasTrend, hint: HINT };
+  })();
+  window.__lsChartZoom = lsChartZoom;
 
   /* ---------- 使用者（本地多用户隔离） ---------- */
   function readProfiles() {
@@ -2718,7 +2814,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
         v = document.createElement("div");
         v.id = "ls-version";
         v.style.cssText = "margin-top:10px;padding-top:8px;border-top:1px solid #2a3040;font-size:11px;color:#8b94a6;text-align:center;line-height:1.6";
-        v.textContent = "版本 2026-10-09k · 含 NAS 同步";
+        v.textContent = "版本 2026-10-09l · 含 NAS 同步";
       }
       if (v.parentNode !== p || p.lastElementChild !== v) { p.appendChild(v); }
       return v;
