@@ -904,6 +904,14 @@ html, body { max-width: 100%; overflow-x: hidden; }
 
 
 
+
+
+
+
+
+
+
+
 <script>/* ==== 本地存储代理（公开版：不连服务器 · 按使用者隔离） ====
    这些页面原本调用 NAS 上的 /api/*；公开版改为读写浏览器本地存储。
    同一台设备上可以有多位使用者，各自的数据互不可见。
@@ -1210,7 +1218,9 @@ html, body { max-width: 100%; overflow-x: hidden; }
     return r;
   }
 
-  window.__lsNas = { show: showNas, login: nasLogin, sync: nasSync, cfg: nasCfg, save: nasSaveCfg, configured: nasConfigured };
+  window.__lsNas = { show: showNas, login: nasLogin, sync: nasSync, cfg: nasCfg, save: nasSaveCfg, configured: nasConfigured,
+                     overwriteServer: nasOverwriteServer, pushKind: nasPushKind, pushVal: nasPushVal,
+                     tomb: { all: tombAll, add: tombAdd, save: tombSave, key: tombKey, merge: tombMerge, itemsOf: tombItemsOf, absorb: tombAbsorb, user: tombUser } };
   window.__lsSync = { make: syncMakeSync, encode: syncEncode, decode: syncDecode, apply: syncApply, show: showSync };
   window.__lsMirror = { set: safeSet, get: safeGet, restore: mirrorRestore, test: storageSelfTest, cookie: cookieParts };
   /* ---- 多设备同步：同步码 ---- */
@@ -1457,8 +1467,8 @@ html, body { max-width: 100%; overflow-x: hidden; }
 
   /* ---- NAS 同步（多设备互通编辑）---- */
   var NAS_KEY = "mini-apps-nas-v1";
-  var NAS_KINDS = ["blood", "running", "redeem", "intervals"];
-  var NAS_STATE = { busy: false, lastMsg: "", pending: false, lastSync: 0 };
+  var NAS_KINDS = ["blood", "running", "redeem", "intervals", "tomb"];
+  var NAS_STATE = { busy: false, lastMsg: "", pending: false, lastSync: 0, tombSlot: null };
 
   function nasCfg() {
     try { return JSON.parse(safeGet(NAS_KEY) || "null"); } catch (e) { return null; }
@@ -1476,6 +1486,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
     if (kind === "running") { return "mini-apps-running-v1"; }
     if (kind === "redeem") { return "mini-apps-blood-redeem-v1"; }
     if (kind === "intervals") { return "mini-apps-blood-intervals-v1"; }
+    if (kind === "tomb") { return "mini-apps-tomb-v1"; }
     return "mini-apps-blood-v1";
   }
   function nasLocalGet(kind, user) {
@@ -1495,14 +1506,78 @@ html, body { max-width: 100%; overflow-x: hidden; }
     }
     return val;
   }
+  /* ---- 删除墓碑（tombstone）：删掉的记录不再被并集合并拉回来 ----
+     本机墓碑单独存一个槽：mini-apps-tomb-v1::<user>，格式 {items:{"<kind>\u0001<recKey>": 时间戳}}。
+     注意：服务端的 APP_NAMES 里还没有 "tomb" 这个 app（不动 server.py），所以同步时墓碑还会
+     随献血/跑步槽一起走（记录槽里多一个同级的 tomb 字段），这样别的设备拉下来就知道
+     "这几条是删掉的"，删掉的那条不会被并集合并拉回来。 */
+  var TOMB_SEP = "\u0001";
+  function tombKey(kind, r) {
+    try { var k = recKey(kind, r); return k ? (kind + TOMB_SEP + k) : ""; } catch (e) { return ""; }
+  }
+  function tombItemsOf(val) {
+    if (!val || typeof val !== "object") { return {}; }
+    /* 三种来源都吃：墓碑槽 {items:{...}} / 记录槽里带的 {records:[],tomb:{...}} / 已经取出来的裸表 {键:时间戳} */
+    var src = (val.items && typeof val.items === "object") ? val.items
+            : ((val.tomb && typeof val.tomb === "object") ? val.tomb : val);
+    var out = {};
+    Object.keys(src).forEach(function (k) { var ts = Number(src[k]); if (isFinite(ts) && ts > 0) { out[k] = ts; } });
+    return out;
+  }
+  function tombMerge(a, b) {
+    var out = {};
+    [tombItemsOf(a), tombItemsOf(b)].forEach(function (src) {
+      Object.keys(src).forEach(function (k) { if (!(k in out) || src[k] > out[k]) { out[k] = src[k]; } });
+    });
+    return out;
+  }
+  function tombUser() { try { var c = nasCfg(); return (c && c.user) || currentUser(); } catch (e) { return currentUser(); } }
+  function tombAll(user) { try { return tombItemsOf(nasLocalGet("tomb", user || tombUser())); } catch (e) { return {}; } }
+  function tombSave(user, items) { try { return nasLocalSet("tomb", user || tombUser(), { items: items || {} }); } catch (e) { return false; } }
+  function tombAdd(kind, r) {
+    try {
+      var u = tombUser(), k = tombKey(kind, r);
+      if (!k) { return ""; }
+      var it = tombAll(u);
+      it[k] = Date.now();
+      tombSave(u, it);
+      return k;
+    } catch (e) { return ""; }
+  }
+  function tombHas(items, kind, r) {
+    if (!items) { return false; }
+    var k = tombKey(kind, r);
+    return !!(k && Object.prototype.hasOwnProperty.call(items, k));
+  }
+  /* 合并三处墓碑：本机墓碑槽 + 本机记录槽里带的 + 服务器记录槽里带的（每个键取较大时间戳），
+     结果写回本机墓碑槽 —— 这样在别的设备上也能知道"这条是删掉的" */
+  function tombAbsorb(mine, theirs) {
+    var u = tombUser(), cur = tombAll(u);
+    var all = tombMerge(tombMerge(cur, mine), theirs);
+    if (JSON.stringify(all) !== JSON.stringify(cur)) { tombSave(u, all); }
+    return all;
+  }
   function nasUnionVal(kind, mine, theirs) {
+    if (kind === "tomb") {                                     /* 每个键取较大的时间戳 */
+      var ti = tombMerge(mine, theirs);
+      if (!Object.keys(ti).length) { return (mine === undefined) ? null : mine; }
+      return { items: ti };
+    }
+    if (kind === "blood" || kind === "running") {              /* 先按形态过滤，再剔除有墓碑的记录 */
+      var tb = tombAbsorb(mine, theirs);
+      var keep = function (r) { return !tombHas(tb, kind, r); };
+      var a = keepRecords(kind, (mine && mine.records) || []).filter(keep);
+      var b = keepRecords(kind, (theirs && theirs.records) || []).filter(keep);
+      var out = { records: unionRecords(kind, a, b) };
+      if (Object.keys(tb).length) { out.tomb = tb; }           /* 带上墓碑，别的设备才知道这几条是删掉的 */
+      return out;
+    }
     if (theirs === null || theirs === undefined) { return keepShape(kind, mine); }
     if (mine === null || mine === undefined) { return keepShape(kind, theirs); }
     if (kind === "intervals") { return mine; }                 /* 配置以本机为准 */
     if (kind === "redeem") { return unionRows(Array.isArray(mine) ? mine : [], Array.isArray(theirs) ? theirs : []); }
-    var a = keepRecords(kind, (mine && mine.records) || []);
-    var b = keepRecords(kind, (theirs && theirs.records) || []);
-    return { records: unionRecords(kind, a, b) };
+    var a2 = (mine && mine.records) || [], b2 = (theirs && theirs.records) || [];
+    return { records: unionRecords(kind, a2, b2) };
   }
   function nasReq(method, path, body) {
     var c = nasCfg();
@@ -1548,8 +1623,15 @@ html, body { max-width: 100%; overflow-x: hidden; }
     var c = nasCfg();
     if (!c) { return Promise.resolve({ kind: kind, ok: false, msg: "未配置" }); }
     var user = c.user;
+    /* 服务器还没开通独立的 tomb 槽 → 安静跳过（墓碑随献血/跑步槽一起同步，不影响其它 kind） */
+    if (kind === "tomb" && NAS_STATE.tombSlot === false) { return Promise.resolve({ kind: kind, ok: true, skipped: true }); }
     return nasReq("GET", "/api/one?user=" + encodeURIComponent(user) + "&app=" + kind).then(function (g) {
       if (g.status === 401) { throw new Error("登录已过期，请重新连接"); }
+      if (kind === "tomb" && (g.status === 400 || g.status === 404 || g.status === 405)) {
+        NAS_STATE.tombSlot = false;
+        return { kind: kind, ok: true, skipped: true, msg: "该服务器暂无独立 tomb 槽（墓碑随记录槽同步）" };
+      }
+      if (kind === "tomb" && g.ok && g.body && g.body.ok) { NAS_STATE.tombSlot = true; }
       if (!g.ok || !g.body || !g.body.ok) { throw new Error((g.body && g.body.error) || ("读取失败 " + g.status)); }
       var remote = g.body.data, rev = g.body.rev;
       var mine = nasLocalGet(kind, user);
@@ -1567,6 +1649,73 @@ html, body { max-width: 100%; overflow-x: hidden; }
     });
   }
 
+  /* ---- 以本机为准覆盖服务器：直接用本机的值 PUT（不合并）；409 用新的 baseRev 重推，最多 3 轮 ---- */
+  function nasPushVal(kind, user) {
+    var val = nasLocalGet(kind, user);
+    if (val === null || val === undefined) { return null; }
+    if (kind === "blood" || kind === "running") {
+      var tb = tombMerge(tombAll(user), val);
+      var recs = keepRecords(kind, (val && val.records) || []).filter(function (r) { return !tombHas(tb, kind, r); });
+      var out = { records: recs };
+      if (Object.keys(tb).length) { out.tomb = tb; }
+      return out;
+    }
+    return val;
+  }
+  function nasPushKind(kind, round) {
+    round = round || 0;
+    var c = nasCfg();
+    if (!c) { return Promise.resolve({ kind: kind, ok: false, msg: "未配置" }); }
+    if (kind === "tomb" && NAS_STATE.tombSlot === false) { return Promise.resolve({ kind: kind, ok: true, skipped: true }); }
+    var user = c.user;
+    var val = nasPushVal(kind, user);
+    if (val === null || val === undefined) { return Promise.resolve({ kind: kind, ok: true, empty: true }); }
+    return nasReq("GET", "/api/one?user=" + encodeURIComponent(user) + "&app=" + kind).then(function (g) {
+      if (kind === "tomb" && (g.status === 400 || g.status === 404 || g.status === 405)) {
+        NAS_STATE.tombSlot = false;
+        return { kind: kind, ok: true, skipped: true };
+      }
+      if (g.status === 401) { throw new Error("登录已过期，请重新连接"); }
+      if (!g.ok || !g.body || !g.body.ok) { throw new Error((g.body && g.body.error) || ("读取失败 " + g.status)); }
+      return nasReq("PUT", "/api/one?user=" + encodeURIComponent(user) + "&app=" + kind,
+                    { baseRev: g.body.rev, data: val }).then(function (p) {
+        if (p.status === 409 && round < 3) { return nasPushKind(kind, round + 1); }   /* 别人刚改过 → 用新的 baseRev 重推本机的值 */
+        if (!p.ok || !p.body || !p.body.ok) { throw new Error((p.body && p.body.error) || ("写入失败 " + p.status)); }
+        return { kind: kind, ok: true, rev: p.body.rev, pushed: true };
+      });
+    });
+  }
+  function nasOverwriteServer() {
+    if (!nasConfigured()) { return Promise.resolve({ ok: false, msg: "请先连接 NAS", done: 0 }); }
+    if (NAS_STATE.busy) { return Promise.resolve({ ok: false, msg: "正在同步中", done: 0 }); }
+    NAS_STATE.busy = true;
+    NAS_STATE.lastMsg = "正在用本机数据覆盖服务器…";
+    nasPaintStatus();
+    var done = 0, failed = [];
+    var chain = Promise.resolve();
+    NAS_KINDS.forEach(function (kind) {
+      chain = chain.then(function () {
+        return nasPushKind(kind).then(function (r) {
+          if (r && r.ok && !r.empty && !r.skipped) { done++; }
+        }).catch(function (e) { failed.push(kind + "：" + nasHint(e)); });
+      });
+    });
+    return chain.then(function () {
+      NAS_STATE.busy = false;
+      NAS_STATE.pending = failed.length > 0;
+      if (failed.length) {
+        NAS_STATE.lastMsg = "覆盖失败：" + failed.join("；");
+      } else {
+        NAS_STATE.lastSync = Date.now();
+        try { var c = nasCfg(); c.lastSync = NAS_STATE.lastSync; nasSaveCfg(c); } catch (e) {}
+        NAS_STATE.lastMsg = "已用本机数据覆盖服务器（" + done + " 项）";
+        try { if (typeof initData === "function") { initData(); } else { refresh(); } } catch (e) {}
+      }
+      nasPaintStatus();
+      nasPaintModalMsg();
+      return { ok: !failed.length, msg: NAS_STATE.lastMsg, done: done, failed: failed };
+    });
+  }
   function nasSync(reason) {
     if (!nasConfigured()) { return Promise.resolve({ ok: false, msg: "未配置" }); }
     if (NAS_STATE.busy) { return Promise.resolve({ ok: false, msg: "正在同步中" }); }
@@ -1674,6 +1823,8 @@ html, body { max-width: 100%; overflow-x: hidden; }
       "<button id='ls-nas-overwrite' style='flex:1;padding:11px;border-radius:10px;border:1px solid #5a2a30;background:#2a1a1e;color:#ffb4b4;cursor:pointer'>覆盖本机（清理用）</button>" +
       "<button id='ls-nas-down' style='flex:1;padding:11px;border-radius:10px;border:1px solid #2a3040;background:#1b2130;color:#dfe6ef;cursor:pointer'>只下载</button>" +
       "<button id='ls-nas-up' style='flex:1;padding:11px;border-radius:10px;border:1px solid #2a3040;background:#1b2130;color:#dfe6ef;cursor:pointer'>只上传</button></div>" +
+      "<div style='display:flex;gap:8px;margin-bottom:8px'>" +
+      "<button id='ls-nas-pushover' style='flex:1;padding:11px;border-radius:10px;border:1px solid #7a2a2a;background:#3a1518;color:#ffb4b4;font-weight:600;cursor:pointer'>以本机为准覆盖服务器</button></div>" +
       "<div style='border-top:1px solid #2a3040;margin:12px 0 8px'></div>" +
       "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>修改口令（本机已连接时，原口令可留空）</div>" +
       inp("ls-nas-old", "", "原口令", "password") +
@@ -1787,6 +1938,20 @@ html, body { max-width: 100%; overflow-x: hidden; }
         msg(errs.length ? ("部分失败：" + errs.join("；")) : ("已用服务器数据覆盖本机（" + done + " 项）✓"), !errs.length);
         nasPaintStatus();
       });
+    });
+    document.getElementById("ls-nas-pushover").addEventListener("click", function () {
+      var btn = this;
+      if (btn.getAttribute("data-armed") !== "1") {
+        btn.setAttribute("data-armed", "1");
+        btn.textContent = "再点一次：确认覆盖服务器";
+        msg("会把**本机**现在的数据直接覆盖到服务器（服务器上多出来的记录会被删掉，别的设备下次同步也会跟着变），再点一次确认");
+        return;
+      }
+      btn.removeAttribute("data-armed");
+      btn.textContent = "以本机为准覆盖服务器";
+      if (!nasConfigured()) { msg("请先连接 NAS"); return; }
+      msg("正在用本机数据覆盖服务器…");
+      nasOverwriteServer().then(function (r) { msg(r.msg, r.ok); nasPaintStatus(); });
     });
     document.getElementById("ls-nas-sync").addEventListener("click", function () {
       nasSync("手动").then(function (r) { msg(r.msg, r.ok); });
@@ -1913,11 +2078,14 @@ html, body { max-width: 100%; overflow-x: hidden; }
     try { body = init.body ? JSON.parse(init.body) : {}; } catch (e) { return reply({ ok: false, error: "bad json" }, 400); }
     var mi = /index=(\d+)/.exec(url);
     var idx = mi ? parseInt(mi[1], 10) : -1;
+    var goneRec = null, goneKind = "";      /* 删除时用来记墓碑 */
     if (method === "POST") { d.records.push(toRecord(body)); }
     else if (method === "PUT") { if (idx >= 0 && idx < d.records.length) { d.records[idx] = toRecord(body); } else { return reply({ ok: false, error: "index out of range" }, 400); } }
-    else if (method === "DELETE") { if (idx >= 0 && idx < d.records.length) { d.records.splice(idx, 1); } else { return reply({ ok: false, error: "index out of range" }, 400); } }
+    else if (method === "DELETE") { if (idx >= 0 && idx < d.records.length) { goneRec = d.records[idx]; goneKind = recKind(); d.records.splice(idx, 1); } else { return reply({ ok: false, error: "index out of range" }, 400); } }
     else { return reply({ ok: false, error: "unsupported" }, 405); }
     if (!save(d)) { return reply({ ok: false, error: "浏览器存储写入失败（可能是无痕模式或空间不足）" }, 507); }
+    /* 删掉的记录记一个墓碑：否则下次并集合并会把这条从服务器 / 别的设备拉回来 */
+    try { if (goneRec) { tombAdd(goneKind, goneRec); } } catch (e) {}
       try { nasSchedulePush(); } catch (e) {}
     var out = full(d);
     out.ok = true;
@@ -2253,6 +2421,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
       } catch (e) {}
     });
     try { localStorage.removeItem("mini-apps-blood-intervals-v1::" + name); } catch (e) {}
+    try { localStorage.removeItem("mini-apps-tomb-v1::" + name); } catch (e) {}
     var o = readProfiles();
     o.list = o.list.filter(function (n) { return n !== name; });
     if (o.default === name) { delete o.default; }
@@ -2590,7 +2759,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
       var v = document.createElement("div");
       v.id = "ls-version";
       v.style.cssText = "margin-top:10px;padding-top:8px;border-top:1px solid #2a3040;font-size:11px;color:#8b94a6;text-align:center;line-height:1.6";
-      v.textContent = "版本 2026-10-09i · 含 NAS 同步";
+      v.textContent = "版本 2026-10-09j · 含 NAS 同步";
       panel.appendChild(v);
     })();
     function exportBackup() {
