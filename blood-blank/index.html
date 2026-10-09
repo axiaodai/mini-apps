@@ -1347,23 +1347,30 @@ html, body { max-width: 100%; overflow-x: hidden; }
       }
     });
   }
-  function recKey(r) {
-    if (!r || !r.length) { return ""; }
-    /* 记录特征：日期+类型+血量+地点+备注（跑步则用名称+日期+公里+用时+备注） */
-    if (document.getElementById("f-amount")) {
-      return [r[0], r[1], r[2], r[4], r[6]].join("|");
-    }
-    return [r[0], r[3], r[1], r[2], r[8]].join("|");
+  function recShape(r) {
+    if (!r || !r.length) { return "?"; }
+    if (r[1] === "全血" || r[1] === "血小板") { return "blood"; }
+    var v = r[1];
+    if (typeof v === "number" || (typeof v === "string" && v !== "" && !isNaN(Number(v)))) { return "running"; }
+    return "?";
   }
-  function unionRecords(a, b) {
+  function recKey(kind, r) {
+    if (!r || !r.length) { return ""; }
+    var k = (typeof kind === "string") ? kind : recShape(r);
+    if (k === "running") { return [r[0], r[3], r[1], r[2], r[8]].join("|"); }
+    if (k === "blood") { return [r[0], r[1], r[2], r[4], r[6]].join("|"); }
+    return JSON.stringify(r);
+  }
+  function unionRecords(kindOrA, aOrB, bMaybe) {
+    var kind = null, a, b;
+    if (Array.isArray(kindOrA)) { kind = null; a = kindOrA; b = aOrB || []; }
+    else { kind = kindOrA; a = aOrB || []; b = bMaybe || []; }
     var out = [], seen = {};
-    (a || []).concat(b || []).forEach(function (r) {
-      var k = recKey(r);
-      if (!k) { return; }
-      if (seen[k]) { return; }
+    a.concat(b).forEach(function (r) {
+      var k = recKey(kind, r);
+      if (!k || seen[k]) { return; }
       seen[k] = 1; out.push(r);
     });
-    /* 按日期排序，保持稳定 */
     try { out.sort(function (x, y) { return String(x[0] || x[3] || "").localeCompare(String(y[0] || y[3] || "")); }); } catch (e) {}
     return out;
   }
@@ -1529,7 +1536,11 @@ html, body { max-width: 100%; overflow-x: hidden; }
   }
   function nasKvKey(kind, user) { return APP_KEY_OF(kind) + "::" + (user || currentUser()); }
   function APP_KEY_OF(kind) {
-    return kind === "blood" ? BASE_KEY : "mini-apps-" + (kind === "running" ? "running" : kind === "redeem" ? "blood-redeem" : "blood-intervals") + "-v1";
+    /* 必须写死：早前用 BASE_KEY，导致跑步页把 "blood" 映射成跑步的键，两边数据混一起 */
+    if (kind === "running") { return "mini-apps-running-v1"; }
+    if (kind === "redeem") { return "mini-apps-blood-redeem-v1"; }
+    if (kind === "intervals") { return "mini-apps-blood-intervals-v1"; }
+    return "mini-apps-blood-v1";
   }
   function nasLocalGet(kind, user) {
     try { return JSON.parse(safeGet(nasKvKey(kind, user)) || "null"); } catch (e) { return null; }
@@ -1712,6 +1723,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
       "<div style='border-top:1px solid #2a3040;margin:2px 0 10px'></div>" +
       "<div style='display:flex;gap:8px;margin-bottom:8px'>" +
       "<button id='ls-nas-sync' style='flex:1.2;padding:11px;border-radius:10px;border:1px solid #2c4a86;background:#1b2e52;color:#cfe0ff;cursor:pointer'>立即同步</button>" +
+      "<button id='ls-nas-overwrite' style='flex:1;padding:11px;border-radius:10px;border:1px solid #5a2a30;background:#2a1a1e;color:#ffb4b4;cursor:pointer'>覆盖本机（清理用）</button>" +
       "<button id='ls-nas-down' style='flex:1;padding:11px;border-radius:10px;border:1px solid #2a3040;background:#1b2130;color:#dfe6ef;cursor:pointer'>只下载</button>" +
       "<button id='ls-nas-up' style='flex:1;padding:11px;border-radius:10px;border:1px solid #2a3040;background:#1b2130;color:#dfe6ef;cursor:pointer'>只上传</button></div>" +
       "<div style='border-top:1px solid #2a3040;margin:12px 0 8px'></div>" +
@@ -1792,6 +1804,41 @@ html, body { max-width: 100%; overflow-x: hidden; }
         msg("口令已修改 ✓　其它设备要用新口令重新连接一次（本机不用）", true);
         nasPaintStatus();
       }).catch(function (e) { msg(nasHint(e)); });
+    });
+    document.getElementById("ls-nas-overwrite").addEventListener("click", function () {
+      var btn = this;
+      if (btn.getAttribute("data-armed") !== "1") {
+        btn.setAttribute("data-armed", "1");
+        btn.textContent = "再点一次：确认覆盖";
+        msg("会用服务器上的数据覆盖本机（本机多出来的记录会被清掉，服务器上的一条不动），再点一次确认");
+        return;
+      }
+      btn.removeAttribute("data-armed");
+      btn.textContent = "覆盖本机（清理用）";
+      var c = nasCfg();
+      if (!c || !c.token) { msg("请先连接 NAS"); return; }
+      msg("正在从服务器拉取…");
+      var done = 0, errs = [];
+      var chain = Promise.resolve();
+      NAS_KINDS.forEach(function (kind) {
+        chain = chain.then(function () {
+          return nasReq("GET", "/api/one?user=" + encodeURIComponent(c.user) + "&app=" + kind).then(function (g) {
+            if (!g.ok || !g.body || !g.body.ok) { errs.push(kind + " 读取失败"); return; }
+            var remote = g.body.data;
+            var isEmpty = (remote === null || remote === undefined) ||
+                          (kind === "redeem" && (!remote || !remote.length)) ||
+                          ((kind === "blood" || kind === "running") && (!remote || !((remote.records) || []).length));
+            if (isEmpty) { return; }
+            nasLocalSet(kind, c.user, remote);
+            done++;
+          }).catch(function (e) { errs.push(kind + "：" + nasHint(e)); });
+        });
+      });
+      chain.then(function () {
+        try { if (typeof initData === "function") { initData(); } else { refresh(); } } catch (e) {}
+        msg(errs.length ? ("部分失败：" + errs.join("；")) : ("已用服务器数据覆盖本机（" + done + " 项）✓"), !errs.length);
+        nasPaintStatus();
+      });
     });
     document.getElementById("ls-nas-sync").addEventListener("click", function () {
       nasSync("手动").then(function (r) { msg(r.msg, r.ok); });
@@ -2645,7 +2692,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
       var v = document.createElement("div");
       v.id = "ls-version";
       v.style.cssText = "margin-top:10px;padding-top:8px;border-top:1px solid #2a3040;font-size:11px;color:#8b94a6;text-align:center;line-height:1.6";
-      v.textContent = "版本 2026-10-08g · 含 NAS 同步";
+      v.textContent = "版本 2026-10-08h · 含 NAS 同步";
       panel.appendChild(v);
     })();
     function exportBackup() {
