@@ -466,7 +466,7 @@ nav a.active svg{transform:translateY(-1px);}
 (function () {
   var KEY = "kaoqin_local_cloud_v1";     /* 本机存储：{v:2, items:{"<uid>":{d,t}}} */
   var KQ_APP = "kaoqin";                 /* 服务端槽位 */
-  var KQ_VER = "版本 2026-10-10c · 含 NAS 同步";   /* 只在 NAS 面板里显示；界面左下角不再显示版本 */
+  var KQ_VER = "版本 2026-10-10d · 含 NAS 同步";   /* 只在 NAS 面板里显示；界面左下角不再显示版本 */
   var realFetch = window.fetch ? window.fetch.bind(window) : null;
 
   /* ---------- 本机存储（按 uid 分开，每个 uid 一份 {d,t}） ---------- */
@@ -748,7 +748,7 @@ nav a.active svg{transform:translateY(-1px);}
       "<button id='ls-kq-reg-x' style='background:none;border:none;color:#9aa3b2;font-size:22px;cursor:pointer'>×</button></div>" +
       "<div style='font-size:11.5px;color:#8b94a6;margin-bottom:10px'>服务器：" + escH(url || "（还没填地址）") + "</div>" +
       "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>邀请码（管理员给你的那一串）</div>" +
-      inp("ls-kq-reg-invite", "", "例如：dsh2026") +
+      inp("ls-kq-reg-invite", "", "管理员发给你的那一串") +
       "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>使用者名字（2–16 个字符）</div>" +
       inp("ls-kq-reg-user", kqUid(), "例如：小明") +
       "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>口令（至少 4 位）</div>" +
@@ -1154,6 +1154,9 @@ nav a.active svg{transform:translateY(-1px);}
       "<button id='ls-kq-disconnect' style='flex:1;padding:11px;border-radius:10px;border:1px solid #5a2a30;background:#2a1a1e;color:#ffb4b4;cursor:pointer'>断开</button></div>" +
       /* 自助注册入口：只有服务端开放注册时才显示（见 nasCheckInvite）*/
       "<button id='ls-kq-register' style='display:none;width:100%;padding:10px;border-radius:10px;border:1px dashed #2c4a86;background:#141b2a;color:#9fc3ff;cursor:pointer;margin:0 0 10px'>注册新账号（有邀请码）</button>" +
+      "<div style='color:#8b94a6;font-size:11.5px;margin:0 0 8px'>忘记口令（NAS 账号口令）：找管理员在后台点「重设口令」即可（记录一条都不会丢），" +
+      "然后用新口令在每台设备上重连一次；若是你自己在本面板下面点「保存新口令」，那本机不用重连。" +
+      "有邀请码的同学，可在本面板点上面的「注册新账号（有邀请码）」自己注册；邀请码是大家共用的，别发到公开群里。</div>" +
       "<div style='border-top:1px solid #2a3040;margin:2px 0 10px'></div>" +
       "<div style='display:flex;gap:8px;margin-bottom:8px'>" +
       "<button id='ls-kq-sync' style='flex:1.2;padding:11px;border-radius:10px;border:1px solid #2c4a86;background:#1b2e52;color:#cfe0ff;cursor:pointer'>立即同步</button>" +
@@ -1333,7 +1336,7 @@ nav a.active svg{transform:translateY(-1px);}
   if (document.readyState === "loading") { document.addEventListener("DOMContentLoaded", boot); }
   else { boot(); }
 })();
-</script><!-- kq-ver 2026-10-10c -->
+</script><!-- kq-ver 2026-10-10d -->
 <script>
 "use strict";
 /* ============================================================
