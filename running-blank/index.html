@@ -2742,10 +2742,15 @@ html, body { max-width: 100%; overflow-x: hidden; }
     var FILL = 'color:#8b6413;font-weight:700';                       /* 需自己填写：琥珀 */
     var KEY  = 'background:#FDF0EE;border:1px solid #F3C9C4;border-radius:10px;padding:9px 10px;color:#8f231c;font-weight:600;margin:6px 0';
     var PRIV = 'background:#FFF6E5;border:1px solid #EBD3A3;border-radius:10px;padding:10px;color:#8b6413;font-weight:700;margin:10px 0';
+    var OK   = 'background:#EEF7F1;border:1px solid #BFDFC9;border-radius:10px;padding:9px 10px;color:#1f6f4a;font-weight:600;margin:6px 0';
     var H    = 'font-size:13.5px;font-weight:700;margin:12px 0 4px';
     var LI   = 'margin:4px 0';
+    var SUBS = 'margin:5px 0 3px;font-weight:700;color:#5f564e';
     var isBlood = !!document.getElementById('f-amount');
     var isRun = !!document.getElementById('f-km');
+    var NUM = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
+    var base = isRun ? 5 : 4;                       /* 共用章节的起始编号：跑步页前面有 4 节，献血页 3 节 */
+    var NAS_NO = NUM[base - 1];                      /* 「多设备同步」这一节的编号 */
 
     var html = '';
     html += '<div style="font-size:17px;font-weight:700;margin-bottom:6px">使用说明</div>';
@@ -2755,15 +2760,17 @@ html, body { max-width: 100%; overflow-x: hidden; }
       html += '<div style="font-size:13px;color:#8b8378;line-height:1.7">' +
         '<b>这是做什么的：</b>一个跑步/登山/赛事记录小工具。你把每次跑完的<b>公里数和用时</b>记进来，' +
         '它会自动算出<b>总里程、跑步次数、平均配速、最快/最慢配速、月度与年度趋势、距离分段最好成绩（PB）</b>，' +
-        '并把<b>实体/虚拟奖牌</b>单独整理成奖牌墙。<b>数据只存在你这台设备的浏览器里</b>，不上传、没有账号。</div>';
+        '并把<b>实体/虚拟奖牌</b>单独整理成奖牌墙。<b>不连 NAS 时数据只存在你这台设备的浏览器里</b>，不上传、没有账号；' +
+        '想手机电脑互通，可按下面「多设备同步」连自己的 NAS。</div>';
 
       html += '<div style="' + H + '">一、怎么用（按顺序）</div>';
-      html += '<div style="' + LI + '">1. <b>添加记录</b>：点右下角红色「＋」→ 填名称、公里数、用时、日期、类型、奖牌（可选）、备注（可选）→ 保存</div>';
+      html += '<div style="' + LI + '">1. <b>添加记录</b>：点右下角红色「＋」→ 填名称、公里数、用时、日期、类型（可选奖牌）→ 保存</div>';
       html += '<div style="' + LI + '">2. <b>看统计</b>：底部「总览 / 记录 / 奖牌 / 统计」四个标签切换</div>';
       html += '<div style="' + LI + '">3. <b>总览</b>：总里程、次数、平均配速 + 每月/每年趋势图</div>';
       html += '<div style="' + LI + '">4. <b>奖牌</b>：实体奖牌（可标已收到/未收到）与虚拟奖牌分开展示</div>';
       html += '<div style="' + LI + '">5. <b>备份</b>：☰ →「导出备份」下载文件；新设备 ☰ →「导入恢复」</div>';
       html += '<div style="' + LI + '">6. <b>多人共用一台设备</b>：☰ →「使用者」可新建 / 切换 / 删除，各自数据互不可见</div>';
+      html += '<div style="' + LI + '">7. <b>多设备（可选）</b>：☰ →「NAS 同步（多设备互通）」连一次，见下面第' + NAS_NO + '节</div>';
 
       html += '<div style="' + H + '">二、每个字段怎么填</div>';
       html += '<div style="' + LI + '">· <span style="' + FILL + '">名称</span>：写你认得出的名字，例如「晨跑」「奥体 10 公里」「XX 半程马拉松」</div>';
@@ -2775,9 +2782,15 @@ html, body { max-width: 100%; overflow-x: hidden; }
       html += '<div style="' + LI + '">· <b>备注</b>：可留空，写感受、天气、路线等</div>';
       html += '<div style="' + LI + '">· <span style="' + FILL + '">使用者名字</span>：见最后一节隐私提醒</div>';
 
-      html += '<div style="' + H + '">三、注意事项（重点）</div>';
+      html += '<div style="' + H + '">三、成绩页与总览怎么点</div>';
+      html += '<div style="' + LI + '">· <b>周跑量点某一周</b>：会<b>在原地展开周一~周日 7 天</b>；点有记录的那一天，弹出<b>当天每一次</b>的明细（用时、配速都列出来）</div>';
+      html += '<div style="' + LI + '">· <b>总览「每月跑量与次数」点某个月的柱子</b>：会跳到成绩页的周跑量，并且<b>只列这个月的周</b>（周号从「第1周」重新起算）</div>';
+      html += '<div style="' + LI + '">· <b>想回到全年</b>：点那一行提示（「已按月筛选（点这里返回全年）」）即可；全年视图是从全年第 1 周一直往下加的长列表</div>';
+      html += '<div style="' + LI + '">· <b>时间都改成冒号式了</b>：2 小时 30 分 27 秒 → <b>2:30:27</b>；17 分 52 秒 → <b>17:52</b>；29 分 9 秒 → <b>29:09</b>；配速 5 分 57 秒 → <b>5:57</b>（不再写 2h30\'27" 那种）</div>';
+
+      html += '<div style="' + H + '">四、注意事项（重点）</div>';
       html += '<div style="' + KEY + '">填好公里数和用时，总里程 / 平均配速 / 趋势图 / PB 都是自动算的，不用另外统计</div>';
-      html += '<div style="' + KEY + '">数据只在本机浏览器：换设备、换浏览器都不会自动同步，需要自己导出／导入</div>';
+      html += '<div style="' + KEY + '">不连 NAS 时数据只在本机浏览器：换设备、换浏览器不会自动同步，要自己导出／导入（或按第' + NAS_NO + '节连 NAS）</div>';
       html += '<div style="' + KEY + '">不要用无痕／隐私模式打开：关掉窗口数据就没了（也无法导入恢复）</div>';
       html += '<div style="' + KEY + '">清理浏览器数据、卸载浏览器之前，先点「导出备份」存一份</div>';
       html += '<div style="' + KEY + '">「导入恢复」会覆盖当前使用者的记录，导入前请确认使用者是谁</div>';
@@ -2789,7 +2802,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
         '它会自动算出<b>累计献血量、献血次数、折算总次数、累计积分、剩余积分</b>，' +
         '并给出<b>每月/每年献血趋势、献血构成、首末记录、全国无偿献血奉献奖进度（金银铜循环 + 终身荣誉奖）</b>，' +
         '还带一个<b>献血提醒</b>（按各地间隔算下次可献时间）和一个<b>积分兑换</b>台账。' +
-        '<b>数据只存在你这台设备的浏览器里</b>，不上传、没有账号。</div>';
+        '<b>不连 NAS 时数据只存在你这台设备的浏览器里</b>，不上传、没有账号；想手机电脑互通，可按下面「多设备同步」连自己的 NAS。</div>';
 
       html += '<div style="' + H + '">一、怎么用（按顺序）</div>';
       html += '<div style="' + LI + '">1. <b>添加记录</b>：点右下角红色「＋」→ 填日期、类型（全血/血小板）、血量、献血地点、积分 → 保存</div>';
@@ -2799,6 +2812,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
       html += '<div style="' + LI + '">5. <b>献血提醒</b>：左下角 ☰ →「献血提醒」，填好当地间隔后可查今天能不能献、下次什么时候能献</div>';
       html += '<div style="' + LI + '">6. <b>备份</b>：☰ →「导出备份」下载文件；新设备 ☰ →「导入恢复」</div>';
       html += '<div style="' + LI + '">7. <b>多人共用一台设备</b>：☰ →「使用者」可新建 / 切换 / 删除，各自数据互不可见</div>';
+      html += '<div style="' + LI + '">8. <b>多设备（可选）</b>：☰ →「NAS 同步（多设备互通）」连一次，见下面第' + NAS_NO + '节</div>';
 
       html += '<div style="' + H + '">二、每个字段怎么填</div>';
       html += '<div style="' + LI + '">· <span style="' + FILL + '">类型</span>：全血 / 血小板（成分血），按你实际献的选</div>';
@@ -2813,16 +2827,61 @@ html, body { max-width: 100%; overflow-x: hidden; }
       html += '<div style="' + H + '">三、注意事项（重点）</div>';
       html += '<div style="' + KEY + '">折算次数、奉献奖进度、剩余积分都是自动算的；只要类型和血量填对就不用管</div>';
       html += '<div style="' + KEY + '">献血提醒的间隔请按<b>当地血站规定</b>填（各省市不同），填完记得点「保存配置」，下次打开直接点「查询」</div>';
-      html += '<div style="' + KEY + '">数据只在本机浏览器：换设备、换浏览器都不会自动同步，需要自己导出／导入</div>';
+      html += '<div style="' + KEY + '">不连 NAS 时数据只在本机浏览器：换设备、换浏览器不会自动同步，要自己导出／导入（或按第' + NAS_NO + '节连 NAS）</div>';
       html += '<div style="' + KEY + '">不要用无痕／隐私模式打开：关掉窗口数据就没了（也无法导入恢复）</div>';
       html += '<div style="' + KEY + '">清理浏览器数据、卸载浏览器之前，先点「导出备份」存一份</div>';
       html += '<div style="' + KEY + '">「导入恢复」会覆盖当前使用者的记录，导入前请确认使用者是谁</div>';
       html += '<div style="' + KEY + '">删除使用者（☰ → 使用者 → 删除）会清空他的全部记录，不可恢复</div>';
     }
 
+    /* ================= 共用章节（两页一样，按页面编号） ================= */
+
+    html += '<div style="' + H + '">' + NUM[base - 1] + '、多设备同步（可选，需要 NAS）</div>';
+    html += '<div style="font-size:12.5px;color:#8b8378;line-height:1.7">一台手机记、另一台电脑也能看到同一份：打开就是最新的，每记一条自动上传，' +
+            '断网时照常在本机记、联网后自动补传。</div>';
+    html += '<div style="' + SUBS + '">每台设备做一次（约 1 分钟）</div>';
+    html += '<div style="' + LI + '">1. 用<b>管理员给你的那个网址</b>打开页面（局域网或公网地址，浏览器地址栏里就是它）</div>';
+    html += '<div style="' + LI + '">2. 点 <b>☰ →「NAS 同步（多设备互通）」</b></div>';
+    html += '<div style="' + LI + '">3. 只填两样：<span style="' + FILL + '">使用者名字</span>（管理员给你定的名字）和 <span style="' + FILL + '">口令</span>；' +
+            '<b>服务器地址会自动识别，不用填</b></div>';
+    html += '<div style="' + LI + '">4. 点「<b>连接并登录</b>」→ 看到绿色的「已连接 …　最后同步：…」就成了</div>';
+    html += '<div style="' + SUBS + '">之后</div>';
+    html += '<div style="' + LI + '">· 打开页面<b>自动同步</b>；记一条 3 秒后自动上传，不用手动操作；断网也能照常记</div>';
+    html += '<div style="' + LI + '">· 面板里还有「立即同步」（手动同步一次）、「修改口令」（面板最下面，本机已连接时原口令可留空）</div>';
+    html += '<div style="' + LI + '">· <b>设置几次</b>：<b>每台设备（每个浏览器）设一次</b>。同一个浏览器第二天打开不用再设（登录能用 <b>180 天</b>）；' +
+            '换手机、换电脑、换浏览器 App 各要设一次；<b>无痕／隐私窗口关掉就忘，每次都要重填</b></div>';
+    html += '<div style="' + KEY + '">没有 NAS、或暂时连不上：用 ☰ →「多设备同步（同步码）」生成一段码发给自己，在另一台粘贴「合并到本机」；' +
+            '也可以用 ☰ →「导出备份」+「导入恢复」搬文件</div>';
+
+    html += '<div style="' + H + '">' + NUM[base] + '、删除记录后会怎样（会跟着同步）</div>';
+    html += '<div style="' + LI + '">· 这里删除是打一个「<b>删除标记</b>」：本机记住这条已删，下次同步会把标记也传上去</div>';
+    html += '<div style="' + LI + '">· 所以：<b>删掉的记录不会被同步拉回来</b>；别的设备同步之后，那条也会跟着消失</div>';
+    html += '<div style="' + KEY + '">一次删掉很多条、又担心服务器上还留着旧的：在 NAS 面板里点红色的「<b>以本机为准覆盖服务器</b>」' +
+            '<b>两次</b>（第一下只是提示，第二下才真上传），服务器就变成你删完后的样子</div>';
+    html += '<div style="' + LI + '">· 删除不可撤销；删之前先点一次「导出备份」更稳</div>';
+
+    html += '<div style="' + H + '">' + NUM[base + 1] + '、图表怎么放大缩小</div>';
+    html += '<div style="' + LI + '">· <b>手机上</b>：两根手指<b>捏合</b>放大 / 缩小（按住可以左右拖动）</div>';
+    html += '<div style="' + LI + '">· <b>电脑上</b>：鼠标<b>滚轮</b>缩放；按住图表<b>拖动平移</b>；<b>双击图表还原</b>到全部月份</div>';
+    html += '<div style="' + LI + '">· 缩到只剩 <b>2 个月</b>就停住（保护，免得缩到什么都看不见）</div>';
+
+    html += '<div style="' + H + '">' + NUM[base + 2] + '、数据存在哪、怎么备份（重要）</div>';
+    html += '<div style="' + LI + '">· <b>默认存在你这台设备的浏览器里</b>（localStorage）。同一份还会往 <b>sessionStorage、Cookie、IndexedDB</b> 各写一层：' +
+            '四层里任意一层能用，数据就不会丢；打开页面时若第一层空了，会自动从别的层恢复</div>';
+    html += '<div style="' + LI + '">· <b>连了 NAS 之后</b>：NAS 上也有一份（数据库文件），服务端还会<b>自动备份</b>（每 6 小时导一份，<b>保留最近 14 份</b>）</div>';
+    html += '<div style="' + LI + '">· <b>换设备 / 留底</b>：☰ →「导出备份」下载一个文件；新设备 ☰ →「导入恢复」选它即可</div>';
+    html += '<div style="' + OK + '">建议：重要记录变动后、清理浏览器前、换手机前，各点一次「导出备份」——这一步最稳，谁也替你做不了</div>';
+
+    html += '<div style="' + H + '">' + NUM[base + 3] + '、隐私与边界（请务必知道）</div>';
+    html += '<div style="' + LI + '">· <b>每人一份</b>：你只能用自己的名字 + 口令读写自己那份数据；想看别人的，服务器会拒绝（技术上是 <b>403</b>）</div>';
+    html += '<div style="' + LI + '">· 服务端<b>没有</b>「查看所有人数据」的功能；但数据文件确实存在 NAS 上，<b>NAS 的主人技术上能打开文件看</b>。' +
+            '对外可以说"没有这个功能、我不会去看"，不要说"技术上不可能"</div>';
+    html += '<div style="' + LI + '">· <b>公网地址带宽有限</b>：几个人够用，人多会卡。在家用<b>局域网地址</b>最快；人多建议换成 Cloudflare Tunnel</div>';
+    html += '<div style="' + LI + '">· 网址、名字、口令不要一起发到群里</div>';
+
     html += '<div style="' + PRIV + '">隐私提醒：使用者名字建议用<b>笔名 / 网名 / 艺名</b>，<b>不要用真实姓名</b>。' +
-            '这个名字会显示在菜单按钮上，别人一眼就能看到；也不是账号，只用于本机区分不同人。' +
-            '本工具所有数据都保存在你自己的浏览器里，不会上传到任何服务器。</div>';
+            '这个名字会显示在菜单按钮上，别人一眼就能看到；也不是账号，只用于区分不同人。' +
+            '不连 NAS 时，本工具所有数据都保存在你自己的浏览器里，不会上传到任何服务器。</div>';
 
     var mask = document.getElementById('ls-help-mask');
     if (!mask) {
