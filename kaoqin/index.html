@@ -466,7 +466,7 @@ nav a.active svg{transform:translateY(-1px);}
 (function () {
   var KEY = "kaoqin_local_cloud_v1";     /* 本机存储：{v:2, items:{"<uid>":{d,t}}} */
   var KQ_APP = "kaoqin";                 /* 服务端槽位 */
-  var KQ_VER = "版本 2026-10-10b · 含 NAS 同步";   /* 只在 NAS 面板里显示；界面左下角不再显示版本 */
+  var KQ_VER = "版本 2026-10-10c · 含 NAS 同步";   /* 只在 NAS 面板里显示；界面左下角不再显示版本 */
   var realFetch = window.fetch ? window.fetch.bind(window) : null;
 
   /* ---------- 本机存储（按 uid 分开，每个 uid 一份 {d,t}） ---------- */
@@ -616,6 +616,189 @@ nav a.active svg{transform:translateY(-1px);}
         var old = nasCfg() || {};
         nasSaveCfg({ url: base, user: j.user, token: j.token, auto: (old.auto === false) ? false : true });
         return j;
+      });
+    });
+  }
+
+  /* ---- 自助注册（邀请码）--------------------------------------------------
+     管理员在服务端开放注册（--set-invite）后，⇅ 面板里会多一个「注册新账号」入口；
+     没开放就隐藏。GET /api/invite-info 只回 {ok, enabled}，**绝不下发邀请码本身**。
+     地址没填 / 连不上 NAS → 一律当作"未开放"，隐藏入口，不弹任何报错。 */
+  var KQ_REG = { enabled: false, checked: false, busy: false, url: "" };
+  var KQ_REG_NAME_RE = /^[\u4e00-\u9fa5A-Za-z0-9_-]{2,16}$/;
+  var KQ_REG_NAME_MSG = "名字要 2–16 个字符，只能用中文、字母、数字、下划线或短横线";
+  function kqTrim(v) { return String(v == null ? "" : v).replace(/^\s+|\s+$/g, ""); }
+  /* 页面端与服务器同一套名字规则（就地提示，不用等服务器回） */
+  function nasRegNameErr(user) {
+    if (!user) { return "请填使用者名字"; }
+    if (user.length < 2 || user.length > 16 || !KQ_REG_NAME_RE.test(user)) { return KQ_REG_NAME_MSG; }
+    return "";
+  }
+  /* 公开请求（查是否开放注册 / 注册）：地址可能还没存进配置，所以显式传 base */
+  function nasPublicReq(url, method, path, body) {
+    var base = kqTrim(url).replace(/\/+$/, "");
+    if (!/^https?:\/\//.test(base)) { base = "http://" + base; }
+    var opts = { method: method, headers: {}, cache: "no-store" };
+    if (body !== undefined) { opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(body); }
+    return fetch(base + path, opts).then(function (r) {
+      return r.text().then(function (t) {
+        var j = null;
+        try { j = JSON.parse(t); } catch (e) {}
+        return { status: r.status, ok: r.ok, body: j, raw: t };
+      });
+    });
+  }
+  /* 取注册要用的服务器地址：面板里填的 → 配置里的 → 页面自己的来源（从 NAS 打开时就是 NAS） */
+  function nasRegBase() {
+    var el = document.getElementById("ls-kq-url");
+    var v = kqTrim(el && el.value);
+    if (!v) { v = kqTrim(nasBase()); }
+    if (!v && (location.protocol === "http:" || location.protocol === "https:")) { v = location.origin; }
+    return String(v || "").replace(/\/+$/, "");
+  }
+  function nasInviteInfo(url) {
+    var u = kqTrim(url) ? kqTrim(url).replace(/\/+$/, "") : nasRegBase();
+    if (!u) { return Promise.resolve(false); }
+    return nasPublicReq(u, "GET", "/api/invite-info").then(function (r) {
+      return !!(r.ok && r.body && r.body.ok && r.body.enabled === true);
+    }).catch(function () { return false; });     /* 连不上 = 未开放 */
+  }
+  function nasPaintRegisterEntry() {
+    var b = document.getElementById("ls-kq-register");
+    if (!b) { return; }
+    b.style.display = KQ_REG.enabled ? "block" : "none";
+    b.setAttribute("data-invite-enabled", KQ_REG.enabled ? "1" : "0");
+  }
+  function nasCheckInvite(url) {
+    var u = kqTrim(url) ? kqTrim(url).replace(/\/+$/, "") : nasRegBase();
+    KQ_REG.url = u;
+    return nasInviteInfo(u).then(function (on) {
+      KQ_REG.enabled = !!on; KQ_REG.checked = true;
+      nasPaintRegisterEntry();
+      return KQ_REG.enabled;
+    });
+  }
+  /* 注册并登录：成功 → 把返回的 token/user 写进现有配置（mini-apps-nas-v1） */
+  function nasRegister(a) {
+    a = a || {};
+    var url = kqTrim(a.url) ? kqTrim(a.url).replace(/\/+$/, "") : nasRegBase();
+    var invite = kqTrim(a.invite);
+    var user = kqTrim(a.user);
+    var pass = String(a.pass == null ? "" : a.pass);
+    if (!url) { return Promise.reject(new Error("请先填服务器地址")); }
+    if (!invite) { return Promise.reject(new Error("请填邀请码")); }
+    var e1 = nasRegNameErr(user);
+    if (e1) { return Promise.reject(new Error(e1)); }
+    if (pass.length < 4) { return Promise.reject(new Error("口令至少 4 位")); }
+    return nasPublicReq(url, "POST", "/api/register", { invite: invite, user: user, pass: pass })
+      .then(function (r) {
+        if (!r.ok || !r.body || !r.body.ok) {
+          throw new Error((r.body && r.body.error) || ("注册失败 " + r.status));
+        }
+        var c2 = nasCfg() || {};
+        c2.url = url; c2.user = r.body.user; c2.token = r.body.token;
+        if (c2.auto === undefined) { c2.auto = true; }
+        nasSaveCfg(c2);
+        KQ_REG.enabled = true;
+        return r.body;
+      });
+  }
+  /* 小提示条（注册结果用；界面上的 ✓ 是文案，不是终端输出） */
+  function kqToast(t, ok) {
+    try {
+      var el = document.getElementById("ls-kq-toast");
+      if (!el) {
+        el = document.createElement("div");
+        el.id = "ls-kq-toast";
+        el.style.cssText = "position:fixed;left:50%;transform:translateX(-50%);bottom:96px;z-index:120;" +
+          "max-width:88vw;padding:10px 14px;border-radius:10px;background:#171a21;border:1px solid #2a3040;" +
+          "color:#e6e8ee;font:13px/1.6 -apple-system,'Microsoft YaHei',sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.5)";
+        document.body.appendChild(el);
+      }
+      el.style.color = ok ? "#8fe3a8" : "#ffb4b4";
+      el.textContent = t || "";
+      el.style.display = t ? "block" : "none";
+      var mine = el;
+      if (t) { setTimeout(function () { if (mine.parentNode) { mine.remove(); } }, 9000); }
+    } catch (e) {}
+  }
+
+  /* 注册小面板（与 ⇅ 面板同一遮罩风格；从面板里的「注册新账号」打开） */
+  function showKqRegister() {
+    var old = document.getElementById("ls-kq-reg");
+    if (old && old.parentNode) { old.parentNode.removeChild(old); }
+    var urlEl = document.getElementById("ls-kq-url");
+    var url = kqTrim(urlEl && urlEl.value) || nasRegBase();
+    var mask = document.createElement("div");
+    mask.id = "ls-kq-reg";
+    mask.style.cssText = "position:fixed;inset:0;z-index:89;background:rgba(8,10,14,.78);display:flex;" +
+      "align-items:center;justify-content:center;padding:18px";
+    mask.addEventListener("click", function (e) { if (e.target === mask) { mask.remove(); } });
+    var card = document.createElement("div");
+    card.style.cssText = "background:#171a21;border:1px solid #2a3040;border-radius:14px;padding:16px;max-width:400px;" +
+      "width:100%;max-height:88vh;overflow-y:auto;color:#e6e8ee;font:13px/1.7 -apple-system,'Microsoft YaHei',sans-serif";
+    function inp(id, val, ph, type) {
+      return "<input id='" + id + "' type='" + (type || "text") + "' value='" + escH(val || "") +
+        "' placeholder='" + escH(ph || "") + "' style='width:100%;box-sizing:border-box;padding:10px;" +
+        "border-radius:10px;border:1px solid #2a3040;background:#12151c;color:#e6e8ee;font-size:13px;margin-bottom:8px'>";
+    }
+    card.innerHTML =
+      "<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:4px'>" +
+      "<div style='font-size:15px;font-weight:600'>注册新账号（邀请码）</div>" +
+      "<button id='ls-kq-reg-x' style='background:none;border:none;color:#9aa3b2;font-size:22px;cursor:pointer'>×</button></div>" +
+      "<div style='font-size:11.5px;color:#8b94a6;margin-bottom:10px'>服务器：" + escH(url || "（还没填地址）") + "</div>" +
+      "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>邀请码（管理员给你的那一串）</div>" +
+      inp("ls-kq-reg-invite", "", "例如：dsh2026") +
+      "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>使用者名字（2–16 个字符）</div>" +
+      inp("ls-kq-reg-user", kqUid(), "例如：小明") +
+      "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>口令（至少 4 位）</div>" +
+      inp("ls-kq-reg-pass", "", "自己定一个口令", "password") +
+      inp("ls-kq-reg-pass2", "", "再输一次口令", "password") +
+      "<button id='ls-kq-reg-go' style='width:100%;padding:11px;border-radius:10px;border:none;background:#1f6f4a;" +
+      "color:#fff;font-weight:700;cursor:pointer;margin:6px 0'>注册并登录</button>" +
+      "<div id='ls-kq-reg-msg' style='font-size:12.5px;color:#9fd0ff'></div>" +
+      "<div style='color:#8b94a6;font-size:11.5px;margin-top:8px'>邀请码是大家共用的，请别发到公开群里；" +
+      "注册完就是已登录状态并自动同步一次，已有账号完全不受影响。</div>";
+    mask.appendChild(card);
+    document.body.appendChild(mask);
+    function rmsg(t, ok) {
+      var el = document.getElementById("ls-kq-reg-msg");
+      if (el) { el.style.color = ok ? "#8fe3a8" : "#ffb4b4"; el.textContent = t; }
+    }
+    document.getElementById("ls-kq-reg-x").addEventListener("click", function () { mask.remove(); });
+    document.getElementById("ls-kq-reg-go").addEventListener("click", function () {
+      var invite = kqTrim((document.getElementById("ls-kq-reg-invite") || {}).value);
+      var user = kqTrim((document.getElementById("ls-kq-reg-user") || {}).value);
+      var p1 = (document.getElementById("ls-kq-reg-pass") || {}).value || "";
+      var p2 = (document.getElementById("ls-kq-reg-pass2") || {}).value || "";
+      var err = "";
+      if (!url) { err = "请先填服务器地址"; }
+      if (!err && !invite) { err = "请填邀请码"; }
+      if (!err) { err = nasRegNameErr(user); }
+      if (!err && p1.length < 4) { err = "口令至少 4 位"; }
+      if (!err && p1 !== p2) { err = "两次输入的口令不一样"; }
+      if (err) { rmsg(err, false); return; }
+      rmsg("正在注册…", true);
+      nasRegister({ url: url, invite: invite, user: user, pass: p1 }).then(function (j) {
+        var uf = document.getElementById("ls-kq-user");
+        if (uf) { uf.value = j.user; }
+        var pf = document.getElementById("ls-kq-pass");
+        if (pf) { pf.value = ""; }
+        KQ_STATE.lastSync = 0;
+        kqPaintStatus();
+        rmsg("注册成功 ✓ 已自动登录", true);
+        if (mask.parentNode) { mask.remove(); }
+        kqPaintMsg("注册成功 ✓ 已自动登录，正在同步…", true);
+        kqToast("注册成功 ✓ 已自动登录", true);
+        return nasSync("注册后");
+      }).then(function (r) {
+        var t = "注册成功 ✓ 已自动登录" + ((r && r.ok) ? ("，已同步：" + r.msg) : "（同步稍后会自动重试）");
+        kqToast(t, !!(r && r.ok));
+        kqPaintStatus();
+      }).catch(function (e) {
+        var hint = nasHint(e);
+        rmsg(hint, false);
+        kqToast(hint, false);
       });
     });
   }
@@ -969,6 +1152,8 @@ nav a.active svg{transform:translateY(-1px);}
       "<div style='display:flex;gap:8px;margin:6px 0 12px'>" +
       "<button id='ls-kq-connect' style='flex:1.4;padding:11px;border-radius:10px;border:none;background:#1f6f4a;color:#fff;font-weight:700;cursor:pointer'>连接并登录</button>" +
       "<button id='ls-kq-disconnect' style='flex:1;padding:11px;border-radius:10px;border:1px solid #5a2a30;background:#2a1a1e;color:#ffb4b4;cursor:pointer'>断开</button></div>" +
+      /* 自助注册入口：只有服务端开放注册时才显示（见 nasCheckInvite）*/
+      "<button id='ls-kq-register' style='display:none;width:100%;padding:10px;border-radius:10px;border:1px dashed #2c4a86;background:#141b2a;color:#9fc3ff;cursor:pointer;margin:0 0 10px'>注册新账号（有邀请码）</button>" +
       "<div style='border-top:1px solid #2a3040;margin:2px 0 10px'></div>" +
       "<div style='display:flex;gap:8px;margin-bottom:8px'>" +
       "<button id='ls-kq-sync' style='flex:1.2;padding:11px;border-radius:10px;border:1px solid #2c4a86;background:#1b2e52;color:#cfe0ff;cursor:pointer'>立即同步</button>" +
@@ -994,6 +1179,10 @@ nav a.active svg{transform:translateY(-1px);}
     mask.appendChild(card);
     document.body.appendChild(mask);
     kqPaintStatus();
+    /* 只有服务端开放了自助注册，才显示「注册新账号」入口；连不上/没填地址 → 保持隐藏（不弹报错） */
+    KQ_REG.enabled = false;
+    nasPaintRegisterEntry();
+    nasCheckInvite((document.getElementById("ls-kq-url") || {}).value || urlVal);
     document.getElementById("ls-kq-x").addEventListener("click", function () { mask.remove(); });
     /* 地址自动识别时锁定输入框，只让用户填口令 */
     (function () {
@@ -1028,6 +1217,7 @@ nav a.active svg{transform:translateY(-1px);}
       kqPaintMsg("已断开（本机数据不受影响）", true);
       kqPaintStatus();
     });
+    document.getElementById("ls-kq-register").addEventListener("click", function () { showKqRegister(); });
     document.getElementById("ls-kq-auto").addEventListener("change", function () {
       var cc = nasCfg() || {};
       cc.auto = this.checked;
@@ -1108,7 +1298,10 @@ nav a.active svg{transform:translateY(-1px);}
   window.__lsNasKaoqin = {
     cfg: nasCfg, save: nasSaveCfg, login: nasLogin, sync: nasSync, overwrite: nasOverwrite,
     uploadLocal: nasUploadLocal, pushLocal: nasUploadLocal,
-    exportLocal: nasExportLocal, importLocal: nasImportLocal
+    exportLocal: nasExportLocal, importLocal: nasImportLocal,
+    register: nasRegister, openRegister: showKqRegister, inviteInfo: nasInviteInfo,
+    inviteEnabled: nasCheckInvite, registerEntry: nasPaintRegisterEntry,
+    registerNameErr: nasRegNameErr
   };
 
   function notice() {
@@ -1140,7 +1333,7 @@ nav a.active svg{transform:translateY(-1px);}
   if (document.readyState === "loading") { document.addEventListener("DOMContentLoaded", boot); }
   else { boot(); }
 })();
-</script><!-- kq-ver 2026-10-10b -->
+</script><!-- kq-ver 2026-10-10c -->
 <script>
 "use strict";
 /* ============================================================
