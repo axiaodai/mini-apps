@@ -900,6 +900,10 @@ html, body { max-width: 100%; overflow-x: hidden; }
 
 
 
+
+
+
+
 <script>/* ==== 本地存储代理（公开版：不连服务器 · 按使用者隔离） ====
    这些页面原本调用 NAS 上的 /api/*；公开版改为读写浏览器本地存储。
    同一台设备上可以有多位使用者，各自的数据互不可见。
@@ -1480,13 +1484,25 @@ html, body { max-width: 100%; overflow-x: hidden; }
   function nasLocalSet(kind, user, val) {
     try { safeSet(nasKvKey(kind, user), JSON.stringify(val)); return true; } catch (e) { return false; }
   }
+  /* 只保留与本类型相符的记录（献血类型/跑步类型），混进来的会被丢弃 */
+  function keepRecords(kind, list) {
+    if (kind !== "blood" && kind !== "running") { return list || []; }
+    return (list || []).filter(function (r) { return recShape(r) === kind; });
+  }
+  function keepShape(kind, val) {
+    if (val && typeof val === "object" && (kind === "blood" || kind === "running")) {
+      return { records: keepRecords(kind, val.records || []) };
+    }
+    return val;
+  }
   function nasUnionVal(kind, mine, theirs) {
-    if (theirs === null || theirs === undefined) { return mine; }
-    if (mine === null || mine === undefined) { return theirs; }
+    if (theirs === null || theirs === undefined) { return keepShape(kind, mine); }
+    if (mine === null || mine === undefined) { return keepShape(kind, theirs); }
     if (kind === "intervals") { return mine; }                 /* 配置以本机为准 */
     if (kind === "redeem") { return unionRows(Array.isArray(mine) ? mine : [], Array.isArray(theirs) ? theirs : []); }
-    var a = (mine && mine.records) || [], b = (theirs && theirs.records) || [];
-    return { records: unionRecords(a, b) };
+    var a = keepRecords(kind, (mine && mine.records) || []);
+    var b = keepRecords(kind, (theirs && theirs.records) || []);
+    return { records: unionRecords(kind, a, b) };
   }
   function nasReq(method, path, body) {
     var c = nasCfg();
@@ -2574,7 +2590,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
       var v = document.createElement("div");
       v.id = "ls-version";
       v.style.cssText = "margin-top:10px;padding-top:8px;border-top:1px solid #2a3040;font-size:11px;color:#8b94a6;text-align:center;line-height:1.6";
-      v.textContent = "版本 2026-10-08h · 含 NAS 同步";
+      v.textContent = "版本 2026-10-09i · 含 NAS 同步";
       panel.appendChild(v);
     })();
     function exportBackup() {
