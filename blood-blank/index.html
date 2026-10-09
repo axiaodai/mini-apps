@@ -1455,6 +1455,9 @@ html, body { max-width: 100%; overflow-x: hidden; }
 
   window.__lsNas = { show: showNas, login: nasLogin, sync: nasSync, cfg: nasCfg, save: nasSaveCfg, configured: nasConfigured,
                      overwriteServer: nasOverwriteServer, pushKind: nasPushKind, pushVal: nasPushVal,
+                     register: nasRegister, openRegister: showNasRegister, inviteInfo: nasInviteInfo,
+                     inviteEnabled: nasCheckInvite, registerEntry: nasPaintRegisterEntry,
+                     registerNameErr: nasRegNameErr,
                      tomb: { all: tombAll, add: tombAdd, save: tombSave, key: tombKey, merge: tombMerge, itemsOf: tombItemsOf, absorb: tombAbsorb, user: tombUser } };
   window.__lsSync = { make: syncMakeSync, encode: syncEncode, decode: syncDecode, apply: syncApply, show: showSync };
   window.__lsMirror = { set: safeSet, get: safeGet, restore: mirrorRestore, test: storageSelfTest, cookie: cookieParts };
@@ -1852,6 +1855,194 @@ html, body { max-width: 100%; overflow-x: hidden; }
     });
   }
 
+  /* ---- 自助注册（邀请码）--------------------------------------------------
+     管理员在服务端开放注册（--set-invite）后，面板里会多一个「注册新账号」入口；
+     没开放就隐藏。GET /api/invite-info 只回 {ok, enabled}，**绝不下发邀请码本身**。
+     地址没填 / 连不上 NAS → 一律当作"未开放"，隐藏入口，不弹任何报错。 */
+  var NAS_REG = { enabled: false, checked: false, busy: false, url: "" };
+  var REG_NAME_RE = /^[\u4e00-\u9fa5A-Za-z0-9_-]{2,16}$/;
+  var REG_NAME_MSG = "名字要 2–16 个字符，只能用中文、字母、数字、下划线或短横线";
+  var REG_TRIM = function (v) { return String(v == null ? "" : v).replace(/^\s+|\s+$/g, ""); };
+
+  /* 页面端与服务器同一套名字规则（就地提示，不用等服务器回） */
+  function nasRegNameErr(user) {
+    if (!user) { return "请填使用者名字"; }
+    if (user.length < 2 || user.length > 16 || !REG_NAME_RE.test(user)) { return REG_NAME_MSG; }
+    return "";
+  }
+  /* 公开请求（查是否开放注册 / 注册）：地址可能还没存进配置，所以显式传 base */
+  function nasPublicReq(url, method, path, body) {
+    var base = REG_TRIM(url).replace(/\/+$/, "");
+    if (!/^https?:\/\//.test(base)) { base = "http://" + base; }
+    var opts = { method: method, headers: {}, cache: "no-store" };
+    if (body !== undefined) { opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(body); }
+    return fetch(base + path, opts).then(function (r) {
+      return r.text().then(function (t) {
+        var j = null;
+        try { j = JSON.parse(t); } catch (e) {}
+        return { status: r.status, ok: r.ok, body: j, raw: t };
+      });
+    });
+  }
+  /* 取注册要用的服务器地址：面板里填的 → 配置里的 → 页面自己的来源（从 NAS 打开时就是 NAS） */
+  function nasRegBase() {
+    var el = document.getElementById("ls-nas-url");
+    var v = REG_TRIM(el && el.value);
+    if (!v) { v = REG_TRIM(nasBase()); }
+    if (!v && (location.protocol === "http:" || location.protocol === "https:")) { v = location.origin; }
+    return String(v || "").replace(/\/+$/, "");
+  }
+  function nasInviteInfo(url) {
+    var u = REG_TRIM(url) ? REG_TRIM(url).replace(/\/+$/, "") : nasRegBase();
+    if (!u) { return Promise.resolve(false); }
+    return nasPublicReq(u, "GET", "/api/invite-info").then(function (r) {
+      return !!(r.ok && r.body && r.body.ok && r.body.enabled === true);
+    }).catch(function () { return false; });     /* 连不上 = 未开放 */
+  }
+  function nasPaintRegisterEntry() {
+    var b = document.getElementById("ls-nas-register");
+    if (!b) { return; }
+    b.style.display = NAS_REG.enabled ? "block" : "none";
+    b.setAttribute("data-invite-enabled", NAS_REG.enabled ? "1" : "0");
+  }
+  function nasCheckInvite(url) {
+    var u = REG_TRIM(url) ? REG_TRIM(url).replace(/\/+$/, "") : nasRegBase();
+    NAS_REG.url = u;
+    return nasInviteInfo(u).then(function (on) {
+      NAS_REG.enabled = !!on; NAS_REG.checked = true;
+      nasPaintRegisterEntry();
+      return NAS_REG.enabled;
+    });
+  }
+  /* 注册并登录：成功 → 把返回的 token/user 写进现有配置（mini-apps-nas-v1） */
+  function nasRegister(a) {
+    a = a || {};
+    var url = REG_TRIM(a.url) ? REG_TRIM(a.url).replace(/\/+$/, "") : nasRegBase();
+    var invite = REG_TRIM(a.invite);
+    var user = REG_TRIM(a.user);
+    var pass = String(a.pass == null ? "" : a.pass);
+    if (!url) { return Promise.reject(new Error("请先填服务器地址")); }
+    if (!invite) { return Promise.reject(new Error("请填邀请码")); }
+    var e1 = nasRegNameErr(user);
+    if (e1) { return Promise.reject(new Error(e1)); }
+    if (pass.length < 4) { return Promise.reject(new Error("口令至少 4 位")); }
+    return nasPublicReq(url, "POST", "/api/register", { invite: invite, user: user, pass: pass })
+      .then(function (r) {
+        if (!r.ok || !r.body || !r.body.ok) {
+          throw new Error((r.body && r.body.error) || ("注册失败 " + r.status));
+        }
+        var c2 = nasCfg() || {};
+        c2.url = url; c2.user = r.body.user; c2.token = r.body.token;
+        if (c2.auto === undefined) { c2.auto = true; }
+        nasSaveCfg(c2);
+        NAS_REG.enabled = true;
+        return r.body;
+      });
+  }
+  /* 小提示条（注册结果用；界面上的 ✓ 是文案，不是终端输出） */
+  function nasToast(t, ok) {
+    try {
+      var el = document.getElementById("ls-nas-toast");
+      if (!el) {
+        el = document.createElement("div");
+        el.id = "ls-nas-toast";
+        el.style.cssText = "position:fixed;left:50%;transform:translateX(-50%);bottom:96px;z-index:120;" +
+          "max-width:88vw;padding:10px 14px;border-radius:10px;background:#171a21;border:1px solid #2a3040;" +
+          "color:#e6e8ee;font:13px/1.6 -apple-system,'Microsoft YaHei',sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.5)";
+        document.body.appendChild(el);
+      }
+      el.style.color = ok ? "#8fe3a8" : "#ffb4b4";
+      el.textContent = t || "";
+      el.style.display = t ? "block" : "none";
+      var mine = el;
+      if (t) { setTimeout(function () { if (mine.parentNode) { mine.remove(); } }, 9000); }
+    } catch (e) {}
+  }
+
+  /* 注册小面板（与 NAS 面板同一遮罩风格；从 NAS 面板里的「注册新账号」打开） */
+  function showNasRegister() {
+    var old = document.getElementById("ls-nas-reg");
+    if (old && old.parentNode) { old.parentNode.removeChild(old); }
+    var urlEl = document.getElementById("ls-nas-url");
+    var url = REG_TRIM(urlEl && urlEl.value) || nasRegBase();
+    var c = nasCfg() || {};
+    var mask = document.createElement("div");
+    mask.id = "ls-nas-reg";
+    mask.style.cssText = "position:fixed;inset:0;z-index:89;background:rgba(8,10,14,.78);display:flex;" +
+      "align-items:center;justify-content:center;padding:18px";
+    mask.addEventListener("click", function (e) { if (e.target === mask) { mask.remove(); } });
+    var card = document.createElement("div");
+    card.style.cssText = "background:#171a21;border:1px solid #2a3040;border-radius:14px;padding:16px;max-width:400px;" +
+      "width:100%;max-height:88vh;overflow-y:auto;color:#e6e8ee;font:13px/1.7 -apple-system,'Microsoft YaHei',sans-serif";
+    var inp = function (id, val, ph, type) {
+      return "<input id='" + id + "' type='" + (type || "text") + "' value='" + escH(val || "") +
+        "' placeholder='" + escH(ph || "") + "' style='width:100%;box-sizing:border-box;padding:10px;" +
+        "border-radius:10px;border:1px solid #2a3040;background:#12151c;color:#e6e8ee;font-size:13px;margin-bottom:8px'>";
+    };
+    card.innerHTML =
+      "<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:4px'>" +
+      "<div style='font-size:15px;font-weight:600'>注册新账号（邀请码）</div>" +
+      "<button id='ls-nas-reg-x' style='background:none;border:none;color:#9aa3b2;font-size:22px;cursor:pointer'>×</button></div>" +
+      "<div style='font-size:11.5px;color:#8b94a6;margin-bottom:10px'>服务器：" + escH(url || "（还没填地址）") + "</div>" +
+      "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>邀请码（管理员给你的那一串）</div>" +
+      inp("ls-nas-reg-invite", "", "例如：dsh2026") +
+      "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>使用者名字（2–16 个字符）</div>" +
+      inp("ls-nas-reg-user", c.user || currentUser(), "例如：小明") +
+      "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>口令（至少 4 位）</div>" +
+      inp("ls-nas-reg-pass", "", "自己定一个口令", "password") +
+      inp("ls-nas-reg-pass2", "", "再输一次口令", "password") +
+      "<button id='ls-nas-reg-go' style='width:100%;padding:11px;border-radius:10px;border:none;background:#1f6f4a;" +
+      "color:#fff;font-weight:700;cursor:pointer;margin:6px 0'>注册并登录</button>" +
+      "<div id='ls-nas-reg-msg' style='font-size:12.5px;color:#9fd0ff'></div>" +
+      "<div style='color:#8b94a6;font-size:11.5px;margin-top:8px'>邀请码是大家共用的，请别发到公开群里；" +
+      "注册完就是已登录状态并自动同步一次，已有账号完全不受影响。</div>";
+    mask.appendChild(card);
+    document.body.appendChild(mask);
+    function rmsg(t, ok) {
+      var el = document.getElementById("ls-nas-reg-msg");
+      if (el) { el.style.color = ok ? "#8fe3a8" : "#ffb4b4"; el.textContent = t; }
+    }
+    document.getElementById("ls-nas-reg-x").addEventListener("click", function () { mask.remove(); });
+    document.getElementById("ls-nas-reg-go").addEventListener("click", function () {
+      var invite = REG_TRIM((document.getElementById("ls-nas-reg-invite") || {}).value);
+      var user = REG_TRIM((document.getElementById("ls-nas-reg-user") || {}).value);
+      var p1 = (document.getElementById("ls-nas-reg-pass") || {}).value || "";
+      var p2 = (document.getElementById("ls-nas-reg-pass2") || {}).value || "";
+      var err = "";
+      if (!url) { err = "请先填服务器地址"; }
+      if (!err && !invite) { err = "请填邀请码"; }
+      if (!err) { err = nasRegNameErr(user); }
+      if (!err && p1.length < 4) { err = "口令至少 4 位"; }
+      if (!err && p1 !== p2) { err = "两次输入的口令不一样"; }
+      if (err) { rmsg(err, false); return; }
+      rmsg("正在注册…", true);
+      nasRegister({ url: url, invite: invite, user: user, pass: p1 }).then(function (j) {
+        var uf = document.getElementById("ls-nas-user");
+        if (uf) { uf.value = j.user; }
+        var pf = document.getElementById("ls-nas-pass");
+        if (pf) { pf.value = ""; }
+        NAS_STATE.lastSync = 0;
+        nasPaintStatus();
+        rmsg("注册成功 ✓ 已自动登录", true);
+        if (mask.parentNode) { mask.remove(); }
+        var m = document.getElementById("ls-nas-msg");
+        if (m) { m.style.color = "#8fe3a8"; m.textContent = "注册成功 ✓ 已自动登录，正在同步…"; }
+        nasToast("注册成功 ✓ 已自动登录", true);
+        return nasSync("注册后");
+      }).then(function (r) {
+        var t = "注册成功 ✓ 已自动登录" + ((r && r.ok) ? ("，已同步：" + r.msg) : "（同步稍后会自动重试）");
+        nasToast(t, !!(r && r.ok));
+        var m2 = document.getElementById("ls-nas-msg");
+        if (m2) { m2.style.color = (r && r.ok) ? "#8fe3a8" : "#ffb4b4"; m2.textContent = t; }
+        nasPaintStatus();
+      }).catch(function (e) {
+        var hint = nasHint(e);
+        rmsg(hint, false);
+        nasToast(hint, false);
+      });
+    });
+  }
+
   /* 同步一个 app：GET → 合并 → PUT(baseRev)，409 就重来 */
   function nasSyncKind(kind, round) {
     round = round || 0;
@@ -2052,6 +2243,8 @@ html, body { max-width: 100%; overflow-x: hidden; }
       "<div style='display:flex;gap:8px;margin:6px 0 12px'>" +
       "<button id='ls-nas-connect' style='flex:1.4;padding:11px;border-radius:10px;border:none;background:#1f6f4a;color:#fff;font-weight:700;cursor:pointer'>连接并登录</button>" +
       "<button id='ls-nas-disconnect' style='flex:1;padding:11px;border-radius:10px;border:1px solid #5a2a30;background:#2a1a1e;color:#ffb4b4;cursor:pointer'>断开</button></div>" +
+      /* 自助注册入口：只有服务端开放注册时才显示（见 nasCheckInvite）*/
+      "<button id='ls-nas-register' style='display:none;width:100%;padding:10px;border-radius:10px;border:1px dashed #2c4a86;background:#141b2a;color:#9fc3ff;cursor:pointer;margin:0 0 10px'>注册新账号（有邀请码）</button>" +
       "<div style='border-top:1px solid #2a3040;margin:2px 0 10px'></div>" +
       "<div style='display:flex;gap:8px;margin-bottom:8px'>" +
       "<button id='ls-nas-sync' style='flex:1.2;padding:11px;border-radius:10px;border:1px solid #2c4a86;background:#1b2e52;color:#cfe0ff;cursor:pointer'>立即同步</button>" +
@@ -2075,6 +2268,10 @@ html, body { max-width: 100%; overflow-x: hidden; }
     document.body.appendChild(mask);
     try { if (window.__lsTools && window.__lsTools.close) { window.__lsTools.close(); } } catch (e) {}
     nasPaintStatus();
+    /* 只有服务端开放了自助注册，才显示「注册新账号」入口；连不上/没填地址 → 保持隐藏（不弹报错） */
+    NAS_REG.enabled = false;
+    nasPaintRegisterEntry();
+    nasCheckInvite((document.getElementById("ls-nas-url") || {}).value || urlVal);
     function msg(t, ok) { var el = document.getElementById("ls-nas-msg"); if (el) { el.style.color = ok ? "#8fe3a8" : "#ffb4b4"; el.textContent = t; } }
     document.getElementById("ls-nas-x").addEventListener("click", function () { mask.remove(); });
     /* 地址自动识别时锁定输入框，只让用户填口令 */
@@ -2111,6 +2308,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
       msg("已断开（本机数据不受影响）", true);
       nasPaintStatus();
     });
+    document.getElementById("ls-nas-register").addEventListener("click", function () { showNasRegister(); });
     document.getElementById("ls-nas-auto").addEventListener("change", function () {
       var cc = nasCfg() || {};
       cc.auto = this.checked;
@@ -2904,7 +3102,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
         '想手机电脑互通，可按下面「多设备同步」连自己的 NAS。</div>';
 
       html += '<div style="' + H + '">一、怎么用（按顺序）</div>';
-      html += '<div style="' + LI + '">1. <b>添加记录</b>：点右下角红色「＋」→ 填名称、公里数、用时、日期、类型（可选奖牌）→ 保存</div>';
+      html += '<div style="' + LI + '">1. <b>添加记录</b>：点右下角红色「＋」→ 填名称、公里数、用时、日期、类型、奖牌（可选）、备注（可选）→ 保存</div>';
       html += '<div style="' + LI + '">2. <b>看统计</b>：底部「总览 / 记录 / 奖牌 / 统计」四个标签切换</div>';
       html += '<div style="' + LI + '">3. <b>总览</b>：总里程、次数、平均配速 + 每月/每年趋势图</div>';
       html += '<div style="' + LI + '">4. <b>奖牌</b>：实体奖牌（可标已收到/未收到）与虚拟奖牌分开展示</div>';
@@ -2993,6 +3191,17 @@ html, body { max-width: 100%; overflow-x: hidden; }
     html += '<div style="' + KEY + '">没有 NAS、或暂时连不上：用 ☰ →「多设备同步（同步码）」生成一段码发给自己，在另一台粘贴「合并到本机」；' +
             '也可以用 ☰ →「导出备份」+「导入恢复」搬文件</div>';
 
+    html += '<div style="' + SUBS + '">还没有账号？自己注册（有邀请码时）</div>';
+    html += '<div style="' + LI + '">· 管理员<b>开放了自助注册</b>时，上面这个 NAS 面板里会多出一个「<b>注册新账号</b>」按钮；' +
+            '没开放（或地址还没填、连不上 NAS）时<b>看不到这个按钮</b>，属于正常</div>';
+    html += '<div style="' + LI + '">· 点它 → 填 <span style="' + FILL + '">邀请码</span>（管理员发给大家的那一串）、' +
+            '<span style="' + FILL + '">使用者名字</span>（2–16 个字符：中文 / 字母 / 数字 / 下划线 / 短横线）、' +
+            '<span style="' + FILL + '">口令</span>（至少 4 位，输两遍）→ 点「<b>注册并登录</b>」</div>';
+    html += '<div style="' + LI + '">· 注册完<b>直接就是已登录状态</b>（不用再单独登录），页面会立刻同步一次；' +
+            '名字重复、口令太短、邀请码写错都会就地提示，照着改就行</div>';
+    html += '<div style="' + KEY + '">邀请码是<b>大家共用</b>的那一串：<b>别发到公开群里</b>。名字一旦被占用就得换一个；' +
+            '管理员换了新邀请码，旧码立刻不能再注册（<b>已经注册过的账号完全不受影响</b>）</div>';
+
     html += '<div style="' + H + '">' + NUM[base] + '、删除记录后会怎样（会跟着同步）</div>';
     html += '<div style="' + LI + '">· 这里删除是打一个「<b>删除标记</b>」：本机记住这条已删，下次同步会把标记也传上去</div>';
     html += '<div style="' + LI + '">· 所以：<b>删掉的记录不会被同步拉回来</b>；别的设备同步之后，那条也会跟着消失</div>';
@@ -3058,7 +3267,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
         v = document.createElement("div");
         v.id = "ls-version";
         v.style.cssText = "margin-top:10px;padding-top:8px;border-top:1px solid #2a3040;font-size:11px;color:#8b94a6;text-align:center;line-height:1.6";
-        v.textContent = "版本 2026-10-09m · 含 NAS 同步";
+        v.textContent = "版本 2026-10-10c · 含 NAS 同步";
       }
       if (v.parentNode !== p || p.lastElementChild !== v) { p.appendChild(v); }
       return v;
