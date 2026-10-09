@@ -1985,7 +1985,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
       "<button id='ls-nas-reg-x' style='background:none;border:none;color:#9aa3b2;font-size:22px;cursor:pointer'>×</button></div>" +
       "<div style='font-size:11.5px;color:#8b94a6;margin-bottom:10px'>服务器：" + escH(url || "（还没填地址）") + "</div>" +
       "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>邀请码（管理员给你的那一串）</div>" +
-      inp("ls-nas-reg-invite", "", "例如：dsh2026") +
+      inp("ls-nas-reg-invite", "", "管理员发给你的那一串") +
       "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>使用者名字（2–16 个字符）</div>" +
       inp("ls-nas-reg-user", c.user || currentUser(), "例如：小明") +
       "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>口令（至少 4 位）</div>" +
@@ -3191,16 +3191,26 @@ html, body { max-width: 100%; overflow-x: hidden; }
     html += '<div style="' + KEY + '">没有 NAS、或暂时连不上：用 ☰ →「多设备同步（同步码）」生成一段码发给自己，在另一台粘贴「合并到本机」；' +
             '也可以用 ☰ →「导出备份」+「导入恢复」搬文件</div>';
 
-    html += '<div style="' + SUBS + '">还没有账号？自己注册（有邀请码时）</div>';
-    html += '<div style="' + LI + '">· 管理员<b>开放了自助注册</b>时，上面这个 NAS 面板里会多出一个「<b>注册新账号</b>」按钮；' +
-            '没开放（或地址还没填、连不上 NAS）时<b>看不到这个按钮</b>，属于正常</div>';
-    html += '<div style="' + LI + '">· 点它 → 填 <span style="' + FILL + '">邀请码</span>（管理员发给大家的那一串）、' +
-            '<span style="' + FILL + '">使用者名字</span>（2–16 个字符：中文 / 字母 / 数字 / 下划线 / 短横线）、' +
-            '<span style="' + FILL + '">口令</span>（至少 4 位，输两遍）→ 点「<b>注册并登录</b>」</div>';
-    html += '<div style="' + LI + '">· 注册完<b>直接就是已登录状态</b>（不用再单独登录），页面会立刻同步一次；' +
-            '名字重复、口令太短、邀请码写错都会就地提示，照着改就行</div>';
-    html += '<div style="' + KEY + '">邀请码是<b>大家共用</b>的那一串：<b>别发到公开群里</b>。名字一旦被占用就得换一个；' +
+    /* ---- 自助注册（邀请码）：给使用者的三步 ---- */
+    html += '<div style="' + SUBS + '">还没有账号？用邀请码自己注册（三步）</div>';
+    html += '<div style="' + LI + '">1. 用<b>管理员给你的网址</b>打开页面 → 点 <b>☰ →「NAS 同步（多设备互通）」</b>' +
+            '（考勤页是左下角 <b>⇅</b> 圆按钮）</div>';
+    html += '<div style="' + LI + '">2. 点面板里的「<b>注册新账号（有邀请码）</b>」按钮 —— ' +
+            '<b>管理员开放了自助注册才会出现</b>；没看到就找管理员要账号，或请他开一下</div>';
+    html += '<div style="' + LI + '">3. 填三样：<span style="' + FILL + '">邀请码</span>（<b>找管理员要</b>）、' +
+            '<span style="' + FILL + '">自己起的名字</span>（2–16 位：中文 / 字母 / 数字 / 下划线 / 短横线）、' +
+            '<span style="' + FILL + '">自己设的口令</span>（≥4 位，输两遍）→ 点「<b>注册并登录</b>」</div>';
+    html += '<div style="' + OK + '">注册成功就是<b>已经登录</b>好了（不用再单独登录），页面会立刻自动同步一次</div>';
+    html += '<div style="' + KEY + '">邀请码是<b>大家共用</b>的那一串：<b>别发到公开群里</b>。名字被别人占了要换一个；' +
             '管理员换了新邀请码，旧码立刻不能再注册（<b>已经注册过的账号完全不受影响</b>）</div>';
+
+    /* ---- 忘记口令怎么办 ---- */
+    html += '<div style="' + SUBS + '">忘记口令了怎么办？</div>';
+    html += '<div style="' + LI + '">· <b>找管理员</b>，他在<b>管理员后台</b>点一下「<b>重设口令</b>」就行（不需要知道你的旧口令）</div>';
+    html += '<div style="' + OK + '">重设口令<b>你原来的记录一条都不会丢</b></div>';
+    html += '<div style="' + LI + '">· 重设后你所有设备上的旧登录都会失效：在每台设备上打开页面 → <b>☰（考勤页是 ⇅）</b> →' +
+            '用<b>新口令</b>重新连接一次即可（<b>名字和地址都还在，只输新口令</b>）</div>';
+    html += '<div style="' + LI + '">· 如果是你自己在面板最下面点「修改口令」：<b>本机不用重连</b>，只有别的设备要用新口令重连一次</div>';
 
     html += '<div style="' + H + '">' + NUM[base] + '、删除记录后会怎样（会跟着同步）</div>';
     html += '<div style="' + LI + '">· 这里删除是打一个「<b>删除标记</b>」：本机记住这条已删，下次同步会把标记也传上去</div>';
@@ -3225,6 +3235,8 @@ html, body { max-width: 100%; overflow-x: hidden; }
     html += '<div style="' + LI + '">· <b>每人一份</b>：你只能用自己的名字 + 口令读写自己那份数据；想看别人的，服务器会拒绝（技术上是 <b>403</b>）</div>';
     html += '<div style="' + LI + '">· 服务端<b>没有</b>「查看所有人数据」的功能；但数据文件确实存在 NAS 上，<b>NAS 的主人技术上能打开文件看</b>。' +
             '对外可以说"没有这个功能、我不会去看"，不要说"技术上不可能"</div>';
+    html += '<div style="' + LI + '">· <b>管理员能看什么</b>：只能看到每人各页记录的<b>条数与最后更新时间</b>' +
+            '（管理员后台的账号一览），<b>看不到记录内容</b>——每一条具体记了什么、备注写了什么，管理员都看不到</div>';
     html += '<div style="' + LI + '">· <b>公网地址带宽有限</b>：几个人够用，人多会卡。在家用<b>局域网地址</b>最快；人多建议换成 Cloudflare Tunnel</div>';
     html += '<div style="' + LI + '">· 网址、名字、口令不要一起发到群里</div>';
 
@@ -3267,7 +3279,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
         v = document.createElement("div");
         v.id = "ls-version";
         v.style.cssText = "margin-top:10px;padding-top:8px;border-top:1px solid #2a3040;font-size:11px;color:#8b94a6;text-align:center;line-height:1.6";
-        v.textContent = "版本 2026-10-10c · 含 NAS 同步";
+        v.textContent = "版本 2026-10-10d · 含 NAS 同步";
       }
       if (v.parentNode !== p || p.lastElementChild !== v) { p.appendChild(v); }
       return v;
