@@ -466,7 +466,7 @@ nav a.active svg{transform:translateY(-1px);}
 (function () {
   var KEY = "kaoqin_local_cloud_v1";     /* 本机存储：{v:2, items:{"<uid>":{d,t}}} */
   var KQ_APP = "kaoqin";                 /* 服务端槽位 */
-  var KQ_VER = "版本 2026-10-10a · 含 NAS 同步";
+  var KQ_VER = "版本 2026-10-10b · 含 NAS 同步";   /* 只在 NAS 面板里显示；界面左下角不再显示版本 */
   var realFetch = window.fetch ? window.fetch.bind(window) : null;
 
   /* ---------- 本机存储（按 uid 分开，每个 uid 一份 {d,t}） ---------- */
@@ -918,15 +918,12 @@ nav a.active svg{transform:translateY(-1px);}
   /* ---------- 左下角小圆按钮 + 紧凑面板 ---------- */
   function kqEnsureUI() {
     if (!document.body || document.getElementById("ls-kq-btn")) { return; }
-    var ver = document.createElement("div");
-    ver.id = "ls-kq-ver";
-    ver.textContent = "版本 2026-10-10a";
-    ver.style.cssText = "position:fixed;left:9px;bottom:calc(136px + env(safe-area-inset-bottom));z-index:86;" +
-      "font-size:10px;line-height:1;color:rgba(13,148,136,.72);pointer-events:none;font-weight:700";
+    /* 版本号不再显示在界面上（用户要求）：原先圆按钮上方那行小字已删除，
+       只在页面里留一行 HTML 注释（标记见文件末尾的 VER_COMMENT），便于远程确认更新是否生效。 */
     var btn = document.createElement("button");
     btn.id = "ls-kq-btn";
     btn.type = "button";
-    btn.title = KQ_VER;
+    btn.title = "NAS 同步（多设备）";
     btn.setAttribute("aria-label", "NAS 同步");
     btn.textContent = "⇅";
     btn.style.cssText = "position:fixed;left:8px;bottom:calc(92px + env(safe-area-inset-bottom));z-index:86;" +
@@ -934,7 +931,6 @@ nav a.active svg{transform:translateY(-1px);}
       "background:rgba(255,255,255,.92);color:#0d9488;font-size:17px;line-height:1;cursor:pointer;" +
       "display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px -5px rgba(14,42,34,.4)";
     btn.addEventListener("click", showNas);
-    document.body.appendChild(ver);
     document.body.appendChild(btn);
   }
 
@@ -1144,7 +1140,7 @@ nav a.active svg{transform:translateY(-1px);}
   if (document.readyState === "loading") { document.addEventListener("DOMContentLoaded", boot); }
   else { boot(); }
 })();
-</script>
+</script><!-- kq-ver 2026-10-10b -->
 <script>
 "use strict";
 /* ============================================================
