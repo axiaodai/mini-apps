@@ -912,6 +912,10 @@ html, body { max-width: 100%; overflow-x: hidden; }
 
 
 
+
+
+
+
 <script>/* ==== 本地存储代理（公开版：不连服务器 · 按使用者隔离） ====
    这些页面原本调用 NAS 上的 /api/*；公开版改为读写浏览器本地存储。
    同一台设备上可以有多位使用者，各自的数据互不可见。
@@ -2702,6 +2706,51 @@ html, body { max-width: 100%; overflow-x: hidden; }
     try { if (window.__lsTools && window.__lsTools.close) { window.__lsTools.close(); } } catch (e) {}
   }
 
+  /* ---- 版本标记永远是 ☰ 菜单的最后一项 ----------------------------------
+     菜单按钮分两批产生：buildToolbar 里的（使用者/自检/迁移/同步码/NAS/导出/导入/说明）
+     和页面其它模块后加的（如「献血提醒」走 __lsTools.add）。版本标记必须在两者之后。 */
+  function moveVersionLast() {
+    try {
+      var p = document.getElementById("ls-panel");
+      if (!p) { return null; }
+      var v = document.getElementById("ls-version");
+      if (!v) {
+        v = document.createElement("div");
+        v.id = "ls-version";
+        v.style.cssText = "margin-top:10px;padding-top:8px;border-top:1px solid #2a3040;font-size:11px;color:#8b94a6;text-align:center;line-height:1.6";
+        v.textContent = "版本 2026-10-09k · 含 NAS 同步";
+      }
+      if (v.parentNode !== p || p.lastElementChild !== v) { p.appendChild(v); }
+      return v;
+    } catch (e) { return null; }
+  }
+  /* panel 是复用的同一个节点：盯着它，任何后加的按钮都不会把版本行顶到前面 */
+  function watchVersionLast(panel) {
+    try {
+      if (!window.MutationObserver || !panel) { return; }
+      new MutationObserver(function () { moveVersionLast(); }).observe(panel, { childList: true });
+    } catch (e) {}
+  }
+  /* ---- 「年度献血明细」表列对齐（纯 CSS，只作用于 #yr-table）------------
+     原样式表头是左对齐、数字单元格是右对齐，两者不一致，列看着不齐。
+     规则：第一列（年份 / 累计）左对齐，其余数字列右对齐，表头与数据一致；
+     等宽数字让各列按位对齐。跑步页没有这张表，等于不生效。 */
+  function injectYearStatCss() {
+    try {
+      if (document.getElementById("ls-yearstat-css")) { return; }
+      var st = document.createElement("style");
+      st.id = "ls-yearstat-css";
+      st.textContent = [
+        "#yr-table{font-variant-numeric:tabular-nums}",
+        "#yr-table th,#yr-table td{text-align:right}",
+        "#yr-table th:first-child,#yr-table td:first-child{text-align:left}",
+        "#yr-table tbody tr:last-child td{text-align:right}",
+        "#yr-table tbody tr:last-child td:first-child{text-align:left}",
+        "@media (max-width:480px){#yr-table th,#yr-table td{padding-left:2px;padding-right:2px}}"
+      ].join("");
+      (document.head || document.documentElement).appendChild(st);
+    } catch (e) {}
+  }
   function buildToolbar() {
     if (document.getElementById("ls-tools")) return;
     /* z-index 70 < 页面弹层 100：填写数据时本浮层会被自动盖住 */
@@ -2755,13 +2804,8 @@ html, body { max-width: 100%; overflow-x: hidden; }
     panel.appendChild(btn("整机迁移（从别的浏览器搬数据）", function () { migrateFromFile(); }, "ls-migrate"));
     panel.appendChild(btn("多设备同步（同步码）", function () { showSync(); }, "ls-sync-btn"));
     panel.appendChild(btn("NAS 同步（多设备互通）", function () { showNas(); }, "ls-nas-btn"));
-    (function () {
-      var v = document.createElement("div");
-      v.id = "ls-version";
-      v.style.cssText = "margin-top:10px;padding-top:8px;border-top:1px solid #2a3040;font-size:11px;color:#8b94a6;text-align:center;line-height:1.6";
-      v.textContent = "版本 2026-10-09j · 含 NAS 同步";
-      panel.appendChild(v);
-    })();
+    moveVersionLast();
+    watchVersionLast(panel);
     function exportBackup() {
       var payload = db();
       /* 页面附加数据（如献血页的积分兑换记录）一并导出 */
@@ -2785,6 +2829,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
     panel.appendChild(btn("导出备份", function () { exportBackup(); }, "ls-export"));
     panel.appendChild(btn("导入恢复", function () { file.click(); }, "ls-import"));
     panel.appendChild(btn("使用说明", function () { showHelp(); }, "ls-help"));
+    moveVersionLast();   /* 收尾：版本行永远在最后一项 */
     wrap.appendChild(toggle);
     wrap.appendChild(panel);
     wrap.appendChild(file);
@@ -2965,6 +3010,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
       add: function (label, fn, id) {
         var b = btn(label, function () { try { fn(); } catch (e) {} }, id);
         panel.appendChild(b);
+        try { moveVersionLast(); } catch (e) {}   /* 版本行永远在最后 */
         return b;
       },
       close: function () { panel.style.display = 'none'; }
@@ -3042,7 +3088,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
   function boot() {
     /* 先跑一次 db()：顺带自愈历史记录（如献血页的折算次数），不依赖页面是否取数成功 */
     try { db(); } catch (e) {}
-    buildToolbar(); firstVisitNotice();
+    buildToolbar(); injectYearStatCss(); firstVisitNotice();
   }
   if (document.readyState === "loading") { document.addEventListener("DOMContentLoaded", boot); }
   else { boot(); }
