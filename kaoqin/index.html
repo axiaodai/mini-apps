@@ -477,7 +477,7 @@ nav a.active svg{transform:translateY(-1px);}
 (function () {
   var KEY = "kaoqin_local_cloud_v1";     /* 本机存储：{v:2, items:{"<uid>":{d,t}}} */
   var KQ_APP = "kaoqin";                 /* 服务端槽位 */
-  var KQ_VER = "版本 2026-10-10e · 含 NAS 同步";   /* 只在 NAS 面板里显示；界面左下角不再显示版本 */
+  var KQ_VER = "版本 2026-10-11a · 含 NAS 同步";   /* 只在 NAS 面板里显示；界面左下角不再显示版本 */
   var realFetch = window.fetch ? window.fetch.bind(window) : null;
 
   /* ---------- 本机存储（按 uid 分开，每个 uid 一份 {d,t}） ---------- */
@@ -509,6 +509,10 @@ nav a.active svg{transform:translateY(-1px);}
       if (typeof UID === "string" && UID) { return UID; }
     } catch (e) {}
     try { return localStorage.getItem("kaoqin_uid") || ""; } catch (e) { return ""; }
+  }
+  /* 页面自己的「口令」还没设过（uid 为空）——这正是最容易把它和 NAS 账号搞混的时候 */
+  function kqUidUnset() {
+    return !kqUid();
   }
   function reply(obj, status) {
     var bodyText = JSON.stringify(obj), code = status || 200;
@@ -1180,7 +1184,13 @@ nav a.active svg{transform:translateY(-1px);}
       "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>服务器地址（飞牛 NAS，带端口）</div>" +
       inp("ls-kq-url", urlVal, "http://你的NAS地址:8080") +
       "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>使用者名字（NAS 上的登录名）</div>" +
-      inp("ls-kq-user", c.user || kqUid(), "例如：测试号") +
+      /* 默认值只认「本机连过 NAS 时留下的那个名字」；没连过就留空 + 占位提示。
+         以前这里回落到 kqUid()（页面自己的口令 uid，64 位十六进制哈希），用户看到一长串乱码。 */
+      inp("ls-kq-user", c.user || "", "填 NAS 上的使用者名字，例如 呆") +
+      (kqUidUnset()
+        ? "<div id='ls-kq-uidhint' style='font-size:11.5px;color:#8b94a6;line-height:1.7;margin:-4px 0 8px'>" +
+          "本页面自己的「口令」是这本考勤账本的名字（和 NAS 账号不是一回事）；NAS 账号请填管理员给你的那个名字。</div>"
+        : "") +
       "<div style='font-size:12.5px;color:#ffd28a;font-weight:700;margin-bottom:4px'>口令（在 NAS 任务脚本里设定的那个）</div>" +
       inp("ls-kq-pass", "", "登录口令", "password") +
       "<div style='display:flex;gap:8px;margin:6px 0 12px'>" +
@@ -1382,7 +1392,7 @@ nav a.active svg{transform:translateY(-1px);}
   if (document.readyState === "loading") { document.addEventListener("DOMContentLoaded", boot); }
   else { boot(); }
 })();
-</script><!-- kq-ver 2026-10-10e -->
+</script><!-- kq-ver 2026-10-11a -->
 <script>
 "use strict";
 /* ============================================================
