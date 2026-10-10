@@ -1371,6 +1371,317 @@ html, body { max-width: 100%; overflow-x: hidden; }
                      tomb: { all: tombAll, add: tombAdd, save: tombSave, key: tombKey, merge: tombMerge, itemsOf: tombItemsOf, absorb: tombAbsorb, user: tombUser } };
   window.__lsSync = { make: syncMakeSync, encode: syncEncode, decode: syncDecode, apply: syncApply, show: showSync };
   window.__lsMirror = { set: safeSet, get: safeGet, restore: mirrorRestore, test: storageSelfTest, cookie: cookieParts };
+
+  /* ---- 抢救导出（只读）：把本机所有存储层的原始内容打包成一个 JSON --------------
+     用户数据疑似被覆盖时用：一次性导出 localStorage / sessionStorage / Cookie /
+     IndexedDB / 内存镜像 __lsMem 的原始内容，交给维护者找回旧数据。
+     只读约定（重要）：只用 length/key/getItem、document.cookie、IndexedDB 只读事务
+     的 getAll/getAllKeys 读取；绝不调用 safeGet（跨层命中时会回写 localStorage）、
+     safeSet / cookieSet / idbSet / nasSaveCfg / readProfiles() / nasCfg() 等会写盘的接口。
+     任何一层读失败都记进 errors[] 后继续，不抛错、不影响其它层。 */
+  var RESCUE_VERSION = "ls-rescue-1";
+  var RESCUE_PAGE = "running";                  /* 注入时替换为 blood / running */
+  var RESCUE_KNOWN_DBS = ["mini-apps-mirror"];   /* 本页面自己的镜像库（databases() 不可用时备用） */
+
+  /* 令牌打码：只留前 6 位，且保证「长度一定小于原文」并含 "..." */
+  function rescueMaskToken(tok) {
+    var s = (tok === null || tok === undefined) ? "" : String(tok);
+    if (!s) { return ""; }
+    var m = s.slice(0, 6) + "...";
+    if (m.length >= s.length) { m = s.slice(0, Math.max(1, s.length - 4)) + "..."; }
+    return m;
+  }
+  /* 让 Blob / ArrayBuffer / Date / 循环引用也能安全进 JSON（只影响输出，不写存储） */
+  function rescueSafeVal(v) {
+    try {
+      if (v === null || v === undefined) { return null; }
+      var ty = typeof v;
+      if (ty === "string" || ty === "number" || ty === "boolean") { return v; }
+      if (ty === "function") { return "[function]"; }
+      if (typeof Blob !== "undefined" && v instanceof Blob) { return "[Blob " + (v.size || 0) + " bytes]"; }
+      if (typeof Date !== "undefined" && v instanceof Date) { return String(v.toISOString()); }
+      if (typeof ArrayBuffer !== "undefined" && v instanceof ArrayBuffer) { return "[ArrayBuffer " + (v.byteLength || 0) + " bytes]"; }
+      if (typeof ArrayBuffer !== "undefined" && ArrayBuffer.isView && ArrayBuffer.isView(v)) {
+        return "[" + ((v.constructor && v.constructor.name) || "TypedArray") + " " + (v.byteLength || 0) + " bytes]";
+      }
+      return JSON.parse(JSON.stringify(v));
+    } catch (e) { try { return String(v); } catch (e2) { return "[unreadable]"; } }
+  }
+  /* 一层 Storage（localStorage / sessionStorage）整份读出 */
+  function rescueReadStorage(store) {
+    var data = {}, errs = [];
+    try {
+      if (!store) { errs.push("存储层不可用"); return { data: data, errors: errs }; }
+      var n = 0;
+      try { n = store.length; } catch (e) { errs.push("读 length 失败：" + ((e && e.message) || e)); }
+      for (var i = 0; i < n; i++) {
+        var k = null;
+        try { k = store.key(i); } catch (e) { errs.push("读第 " + i + " 个键名失败：" + ((e && e.message) || e)); continue; }
+        if (k === null || k === undefined) { continue; }
+        try { data[k] = store.getItem(k); } catch (e) { data[k] = null; errs.push("读 " + k + " 失败：" + ((e && e.message) || e)); }
+      }
+    } catch (e) { errs.push("枚举存储层失败：" + ((e && e.message) || e)); }
+    return { data: data, errors: errs };
+  }
+  function rescueCookieCount(s) {
+    var n = 0;
+    try { String(s || "").split(";").forEach(function (kv) { if (kv.indexOf("=") > 0) { n++; } }); } catch (e) {}
+    return n;
+  }
+  function rescueStorageRO(name) {
+    try { return window[name] || null; } catch (e) { return null; }
+  }
+  /* IndexedDB：indexedDB.databases() 列库（不可用/为空则退回已知库名），再逐个 store
+     用只读事务 getAll(+getAllKeys) 读出。库不存在时不创建（onupgradeneeded 里直接 abort）。 */
+  function rescueIdb(cb) {
+    var out = {}, errs = [], names = [], source = "none";
+    function openByName(name, onOk, onFail) {
+      var req;
+      try { req = indexedDB.open(name); } catch (e) { onFail("open 抛错：" + ((e && e.message) || e)); return; }
+      var upgraded = false;
+      req.onupgradeneeded = function () {
+        upgraded = true;                       /* 库不存在 → 中止本次升级，绝不创建 */
+        try { req.transaction.abort(); } catch (e) {}
+      };
+      req.onsuccess = function () {
+        var db = req.result;
+        if (upgraded) { try { db.close(); } catch (e) {} onFail("not found"); return; }
+        onOk(db);
+      };
+      req.onerror = function () { onFail("打开失败"); };
+    }
+    function readStore(db, dbName, sn, next) {
+      try {
+        var st = db.transaction(sn, "readonly").objectStore(sn);
+        var needKeys = (st.keyPath === null || st.keyPath === undefined || st.keyPath === "");
+        var vals = [], ks = [];
+        var gotV = false, gotK = !needKeys;
+        function finish() {
+          if (!gotV || !gotK) { return; }
+          if (!out[dbName]) { out[dbName] = {}; }
+          if (needKeys) {
+            var recs = [];
+            for (var i = 0; i < vals.length; i++) { recs.push({ key: ks[i], value: vals[i] }); }
+            out[dbName][sn] = recs;              /* 外部键 store：{key,value} 成对，便于按 key 找回 */
+          } else {
+            out[dbName][sn] = vals;              /* 内联键 store：原始记录数组 */
+          }
+          next();
+        }
+        if (!st.getAll) {                        /* 极老内核：退回游标 */
+          var cur = st.openCursor();
+          cur.onsuccess = function (e) {
+            var c = e.target.result;
+            if (c) {
+              vals.push(rescueSafeVal(c.value));
+              if (needKeys) { ks.push(rescueSafeVal(c.key)); }
+              c.continue();
+            } else { gotV = true; gotK = true; finish(); }
+          };
+          cur.onerror = function () { errs.push("游标读取失败 " + dbName + "/" + sn); gotV = true; gotK = true; finish(); };
+          return;
+        }
+        var rv = st.getAll();
+        rv.onsuccess = function () { vals = (rv.result || []).map(rescueSafeVal); gotV = true; finish(); };
+        rv.onerror = function () { errs.push("getAll 失败 " + dbName + "/" + sn); gotV = true; vals = []; finish(); };
+        if (needKeys && st.getAllKeys) {
+          var rk = st.getAllKeys();
+          rk.onsuccess = function () { ks = (rk.result || []).map(rescueSafeVal); gotK = true; finish(); };
+          rk.onerror = function () { errs.push("getAllKeys 失败 " + dbName + "/" + sn); ks = []; gotK = true; finish(); };
+        } else if (needKeys) {
+          ks = []; gotK = true;
+        }
+      } catch (e) {
+        errs.push("读 store 失败 " + dbName + "/" + sn + "：" + ((e && e.message) || e));
+        next();
+      }
+    }
+    function readDb(name, next) {
+      openByName(name, function (db) {
+        var stores = [];
+        try { for (var i = 0; i < db.objectStoreNames.length; i++) { stores.push(db.objectStoreNames[i]); } } catch (e) { errs.push("列 store 失败 " + name); }
+        var i = 0;
+        (function step() {
+          if (i >= stores.length) { try { db.close(); } catch (e) {} next(); return; }
+          readStore(db, name, stores[i++], step);
+        })();
+      }, function (why) {
+        if (why !== "not found") { errs.push("打开库 " + name + " 失败：" + why); }
+        next();
+      });
+    }
+    function run(list, i, next) {
+      if (i >= list.length) { next(); return; }
+      readDb(list[i], function () { run(list, i + 1, next); });
+    }
+    function start(list) {
+      names = list;
+      run(list, 0, function () {
+        cb({ data: out, errors: errs, databases: names.slice(), source: source });
+      });
+    }
+    try {
+      if (!window.indexedDB) {
+        cb({ data: {}, errors: ["indexedDB 不可用"], databases: [], source: "none" });
+        return;
+      }
+      if (typeof indexedDB.databases === "function") {
+        indexedDB.databases().then(function (dbs) {
+          var list = (dbs || []).map(function (d) { return d && d.name; }).filter(Boolean);
+          if (!list.length) { source = "databases() 为空 → 已知库名"; list = RESCUE_KNOWN_DBS.slice(); }
+          else { source = "databases()"; }
+          start(list);
+        }).catch(function (e) {
+          errs.push("databases() 失败：" + ((e && e.message) || e));
+          source = "已知库名";
+          start(RESCUE_KNOWN_DBS.slice());
+        });
+      } else {
+        source = "已知库名（无 databases()）";
+        start(RESCUE_KNOWN_DBS.slice());
+      }
+    } catch (e) {
+      cb({ data: {}, errors: errs.concat(["indexedDB 枚举失败：" + ((e && e.message) || e)]), databases: [], source: "none" });
+    }
+  }
+  /* 只读读使用者名单 / NAS 配置：绝不用 safeGet（它会在跨层命中时回写 localStorage） */
+  function rescueProfilesRO() {
+    try { var o = JSON.parse(localStorage.getItem(PROF_KEY) || "null"); return (o && typeof o === "object") ? o : null; } catch (e) { return null; }
+  }
+  function rescueNasCfgRO() {
+    try { var o = JSON.parse(localStorage.getItem("mini-apps-nas-v1") || "null"); return (o && typeof o === "object") ? o : null; } catch (e) { return null; }
+  }
+  /* 存储层 / 记录数统计（给状态行「N 个存储层，M 条记录」用） */
+  function rescueCount(dump) {
+    var layers = 0, records = 0;
+    try {
+      var lsN = Object.keys(dump.localStorage || {}).length;
+      var ssN = Object.keys(dump.sessionStorage || {}).length;
+      var ckN = rescueCookieCount(dump.cookies);
+      var idbStores = 0, idbN = 0;
+      var idb = dump.indexedDB || {};
+      Object.keys(idb).forEach(function (db) {
+        Object.keys(idb[db] || {}).forEach(function (st) {
+          idbStores++; idbN += (idb[db][st] || []).length;
+        });
+      });
+      var memN = dump.__lsMem ? Object.keys(dump.__lsMem).length : 0;
+      if (lsN) { layers++; } if (ssN) { layers++; } if (ckN) { layers++; }
+      if (idbStores) { layers++; } if (memN) { layers++; }
+      records = lsN + ssN + ckN + idbN + memN;
+    } catch (e) {}
+    return { layers: layers, records: records };
+  }
+  function rescueStamp() {
+    var d = new Date();
+    function p2(n) { return (n < 10 ? "0" : "") + n; }
+    return d.getFullYear() + p2(d.getMonth() + 1) + p2(d.getDate()) + "-" + p2(d.getHours()) + p2(d.getMinutes());
+  }
+  function rescueFileName(dump) {
+    return "本机数据抢救-" + ((dump && dump.page) || RESCUE_PAGE) + "-" + rescueStamp() + ".json";
+  }
+  /* 打包（异步：IndexedDB 是异步的）→ resolve 出可 JSON.stringify 的普通对象 */
+  function rescueDump() {
+    return new Promise(function (resolve) {
+      var dump = {
+        exporter: RESCUE_VERSION,
+        exported_at: (function () { try { return String(new Date().toISOString()); } catch (e) { return ""; } })(),
+        page: RESCUE_PAGE,
+        origin: (function () { try { return String(location.origin || ""); } catch (e) { return ""; } })(),
+        user_agent: (function () { try { return String(navigator.userAgent || ""); } catch (e) { return ""; } })(),
+        localStorage: {}, sessionStorage: {}, cookies: "", indexedDB: {},
+        app_state: {}, errors: []
+      };
+      try {
+        var ls = rescueReadStorage(rescueStorageRO("localStorage"));
+        var ss = rescueReadStorage(rescueStorageRO("sessionStorage"));
+        dump.localStorage = ls.data;
+        dump.sessionStorage = ss.data;
+        dump.errors = dump.errors.concat(ls.errors || [], ss.errors || []);
+        try { dump.cookies = String(document.cookie || ""); }
+        catch (e) { dump.errors.push("读 Cookie 失败：" + ((e && e.message) || e)); }
+      } catch (e) {
+        dump.errors.push("读 Storage 失败：" + ((e && e.message) || e));
+      }
+      rescueIdb(function (idb) {
+        try {
+          dump.indexedDB = (idb && idb.data) || {};
+          dump.indexedDB_meta = {
+            databases: (idb && idb.databases) || [],
+            source: (idb && idb.source) || "none",
+            shape: "外部键 store 为 [{key,value}]，内联键 store 为原始记录数组"
+          };
+          dump.errors = dump.errors.concat((idb && idb.errors) || []);
+        } catch (e) { dump.errors.push("整理 IndexedDB 结果失败：" + ((e && e.message) || e)); }
+        try {
+          var prof = rescueProfilesRO();
+          var nas = rescueNasCfgRO();
+          var st = NAS_STATE || {};
+          dump.app_state = {
+            page: RESCUE_PAGE,
+            base_key: BASE_KEY,
+            data_key: (prof && prof.current) ? (BASE_KEY + "::" + prof.current) : null,
+            current_user: (prof && prof.current) || null,
+            profiles: rescueSafeVal(prof),
+            nas: nas ? {
+              url: nas.url || "",
+              user: nas.user || "",
+              token: rescueMaskToken(nas.token),
+              token_masked: true,
+              token_len: (nas.token === null || nas.token === undefined) ? 0 : String(nas.token).length,
+              auto: (nas.auto !== false),
+              lastSync: nas.lastSync || 0
+            } : null,
+            sync: {
+              busy: !!st.busy, pending: !!st.pending, lastMsg: st.lastMsg || "",
+              lastSync: st.lastSync || 0, tombSlot: (st.tombSlot === undefined ? null : st.tombSlot)
+            },
+            storage_keys: { profiles: PROF_KEY, nas: "mini-apps-nas-v1", base_key: BASE_KEY, data_key: (prof && prof.current) ? (BASE_KEY + "::" + prof.current) : null }
+          };
+        } catch (e) { dump.errors.push("整理 app_state 失败：" + ((e && e.message) || e)); }
+        try {
+          if (__lsMem && typeof __lsMem === "object") {
+            var ks = Object.keys(__lsMem), mem = {};
+            for (var i = 0; i < ks.length; i++) { mem[ks[i]] = rescueSafeVal(__lsMem[ks[i]]); }
+            if (ks.length) { dump.__lsMem = mem; }
+          }
+        } catch (e) { dump.errors.push("读内存镜像层失败：" + ((e && e.message) || e)); }
+        try { dump.counts = rescueCount(dump); } catch (e) {}
+        dump.warnings = ["本文件含本机全部原始存储内容（localStorage 里可能有 NAS 令牌原文），请只发给设备维护者"];
+        resolve(dump);
+      });
+    });
+  }
+  /* 触发浏览器下载；返回 {ok,name,bytes,layers,records,errors}（不写任何存储） */
+  function rescueSave(dump) {
+    var name = rescueFileName(dump);
+    var r = { ok: false, name: name, bytes: 0, layers: 0, records: 0, errors: 0 };
+    try {
+      var c = rescueCount(dump);
+      r.layers = c.layers; r.records = c.records;
+      r.errors = (dump && dump.errors ? dump.errors.length : 0);
+      var text = JSON.stringify(dump, null, 1);
+      r.bytes = text.length;
+      var blob = new Blob([text], { type: "application/json" });
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      a.style.display = "none";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { try { URL.revokeObjectURL(a.href); } catch (e) {} }, 3000);
+      r.ok = true;
+    } catch (e) {
+      r.error = (e && e.message) || String(e);
+    }
+    return r;
+  }
+  /* 调试 / 测试入口（window.__lsNas.rescueDump / __lsRescue.dump 均可） */
+  window.__lsRescue = { version: RESCUE_VERSION, page: RESCUE_PAGE, dump: rescueDump,
+                        save: rescueSave, count: rescueCount, mask: rescueMaskToken };
+
+  window.__lsNas.rescueDump = rescueDump;      /* 抢救导出：只读打包全部存储层 */
+  window.__lsNas.rescueSave = rescueSave;
+  window.__lsNas.rescueCount = rescueCount;
   /* ---- 多设备同步：同步码 ---- */
   var SYNC_PREFIX = "LS1:";      /* 压缩过 */
   var SYNC_PLAIN = "LS0:";       /* 未压缩（浏览器不支持压缩时） */
@@ -2163,6 +2474,9 @@ html, body { max-width: 100%; overflow-x: hidden; }
       "<button id='ls-nas-up' style='flex:1;padding:11px;border-radius:10px;border:1px solid #2a3040;background:#1b2130;color:#dfe6ef;cursor:pointer'>只上传</button></div>" +
       "<div style='display:flex;gap:8px;margin-bottom:8px'>" +
       "<button id='ls-nas-pushover' style='flex:1;padding:11px;border-radius:10px;border:1px solid #7a2a2a;background:#3a1518;color:#ffb4b4;font-weight:600;cursor:pointer'>以本机为准覆盖服务器</button></div>" +
+      "<div style='display:flex;gap:8px;margin-bottom:8px'>" +
+      "<button id='ls-nas-rescue' style='flex:1;padding:11px;border-radius:10px;border:1px solid #2a3040;background:#1b2130;color:#dfe6ef;cursor:pointer'>导出全部本机数据（抢救用）</button></div>" +
+      "<div style='color:#8b94a6;font-size:11.5px;line-height:1.8;margin:0 0 8px'>只读取、不修改任何数据：把本机全部存储层（localStorage / sessionStorage / Cookie / IndexedDB / 内存镜像）的原始内容打包成一个 JSON。数据好像被覆盖时点它，把下载到的文件原样发回给维护者。</div>" +
       "<div style='border-top:1px solid #2a3040;margin:12px 0 8px'></div>" +
       "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>修改口令（本机已连接时，原口令可留空）</div>" +
       inp("ls-nas-old", "", "原口令", "password") +
@@ -2295,6 +2609,21 @@ html, body { max-width: 100%; overflow-x: hidden; }
       if (!nasConfigured()) { msg("请先连接 NAS"); return; }
       msg("正在用本机数据覆盖服务器…");
       nasOverwriteServer().then(function (r) { msg(r.msg, r.ok); nasPaintStatus(); });
+    });
+    document.getElementById("ls-nas-rescue").addEventListener("click", function () {
+      var btn = this;
+      if (btn.getAttribute("data-busy") === "1") { return; }
+      btn.setAttribute("data-busy", "1");
+      msg("正在读取本机所有存储层…（只读，不会修改任何数据）", true);
+      rescueDump().then(function (d) {
+        var r = rescueSave(d);
+        btn.removeAttribute("data-busy");
+        msg("已导出（" + r.layers + " 个存储层，" + r.records + " 条记录），请把文件发回" +
+            (r.errors ? "（有 " + r.errors + " 处读取失败，已记在文件里）" : "") + " ✓", true);
+      }).catch(function (e) {
+        btn.removeAttribute("data-busy");
+        msg("导出失败：" + ((e && e.message) || e), false);
+      });
     });
     document.getElementById("ls-nas-sync").addEventListener("click", function () {
       nasSync("手动").then(function (r) { msg(r.msg, r.ok); });
@@ -3175,7 +3504,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
         v = document.createElement("div");
         v.id = "ls-version";
         v.style.cssText = "margin-top:10px;padding-top:8px;border-top:1px solid #2a3040;font-size:11px;color:#8b94a6;text-align:center;line-height:1.6";
-        v.textContent = "版本 2026-10-10e · 含 NAS 同步";
+        v.textContent = "版本 2026-10-11b · 含 NAS 同步";
       }
       if (v.parentNode !== p || p.lastElementChild !== v) { p.appendChild(v); }
       return v;
