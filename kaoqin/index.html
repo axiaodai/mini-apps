@@ -162,7 +162,10 @@ main{max-width:560px; margin:0 auto; padding:14px 14px 20px;}
 .day.blank{background:transparent; border-color:transparent; cursor:default;}
 .day .dnum{font-size:12px; font-weight:800; color:var(--ink); line-height:1.15; display:flex; align-items:center; gap:3px;}
 .day .dnum .otdot{display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--jia); box-shadow:0 0 0 2px var(--jia-soft);}
-.day .bars{display:flex; flex-direction:column; gap:3px; margin-top:auto;}
+/* 日历格子里的色条：两个 span 是 flex 列的子项，必须显式 stretch + 宽度，
+   否则被年度图表那条 .card>.bars 的 align-items:flex-end 影响会缩成 0 宽看不见 */
+.day .bars{display:flex; flex-direction:column; align-items:stretch; gap:3px; margin-top:auto;}
+.day .bars .bar{width:100%;}
 .bar{height:6px; border-radius:3px; background:repeating-linear-gradient(90deg, var(--empty) 0 3px, transparent 3px 5px); opacity:.7;}
 .bar.s1{background:linear-gradient(180deg,rgba(255,255,255,.45),transparent), var(--ban); opacity:1; box-shadow:0 1px 1px rgba(14,163,113,.28);}
 .bar.s2{background:linear-gradient(180deg,rgba(255,255,255,.4),transparent), var(--xiu); opacity:1; box-shadow:0 1px 1px rgba(217,119,6,.26);}
@@ -248,7 +251,8 @@ th{color:var(--faint); font-weight:600; font-size:11.5px; letter-spacing:.3px;}
 td:first-child,th:first-child{text-align:left; font-weight:600;}
 tr:last-child td{border-bottom:none;}
 tr.section td{font-weight:800; color:var(--brand-deep); background:var(--brand-faint); border-radius:8px;}
-.bars{display:flex; align-items:flex-end; gap:6px; height:160px; padding-top:10px;}
+/* 年度工资柱状图：限定作用域到卡片内，绝不能再作用到 .day .bars（日历色条） */
+.card > .bars{display:flex; align-items:flex-end; gap:6px; height:160px; padding-top:10px;}
 .bar-col{flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; height:100%; justify-content:flex-end; min-width:0;}
 .bar-col .fill{
   width:100%; max-width:30px; background:linear-gradient(180deg,var(--brand-2),var(--brand));
@@ -477,7 +481,7 @@ nav a.active svg{transform:translateY(-1px);}
 (function () {
   var KEY = "kaoqin_local_cloud_v1";     /* 本机存储：{v:2, items:{"<uid>":{d,t}}} */
   var KQ_APP = "kaoqin";                 /* 服务端槽位 */
-  var KQ_VER = "版本 2026-10-11b · 含 NAS 同步";   /* 只在 NAS 面板里显示；界面左下角不再显示版本 */
+  var KQ_VER = "版本 2026-10-11c · 含 NAS 同步";   /* 只在 NAS 面板里显示；界面左下角不再显示版本 */
   var realFetch = window.fetch ? window.fetch.bind(window) : null;
 
   /* ---------- 本机存储（按 uid 分开，每个 uid 一份 {d,t}） ---------- */
@@ -1724,7 +1728,7 @@ nav a.active svg{transform:translateY(-1px);}
   if (document.readyState === "loading") { document.addEventListener("DOMContentLoaded", boot); }
   else { boot(); }
 })();
-</script><!-- kq-ver 2026-10-11b -->
+</script><!-- kq-ver 2026-10-11c -->
 <script>
 "use strict";
 /* ============================================================
