@@ -481,7 +481,7 @@ nav a.active svg{transform:translateY(-1px);}
 (function () {
   var KEY = "kaoqin_local_cloud_v1";     /* 本机存储：{v:2, items:{"<uid>":{d,t}}} */
   var KQ_APP = "kaoqin";                 /* 服务端槽位 */
-  var KQ_VER = "版本 2026-10-11c · 含 NAS 同步";   /* 只在 NAS 面板里显示；界面左下角不再显示版本 */
+  var KQ_VER = "版本 2026-10-12a · 含 NAS 同步";   /* 只在 NAS 面板里显示；界面左下角不再显示版本 */
   var realFetch = window.fetch ? window.fetch.bind(window) : null;
 
   /* ---------- 本机存储（按 uid 分开，每个 uid 一份 {d,t}） ---------- */
@@ -1686,6 +1686,37 @@ nav a.active svg{transform:translateY(-1px);}
     });
   }
 
+  /* ---- 报到信号：一次加载只报一次（延迟 2 秒、失败静默）-------------------
+     只报「考勤页有人打开」，不报任何记录内容；地址优先用已连的 NAS，
+     没连过就用 location.origin（从 NAS 打开时天然正确；GitHub Pages / file:// 静默跳过）。 */
+  function kqVisitBase() {
+    var c = nasCfg();
+    if (c && c.url) { return String(c.url).replace(/\/+$/, ""); }
+    try {
+      if (location.protocol === "http:" || location.protocol === "https:") {
+        return String(location.origin || "");
+      }
+    } catch (e) {}
+    return "";
+  }
+  function kqVisitPing() {
+    try {
+      var base = kqVisitBase();
+      if (!base) { return; }
+      var FLAG = "ls-visit-kaoqin";
+      try {
+        if (sessionStorage.getItem(FLAG)) { return; }   /* 同一次会话里刷新过 → 不再刷计数 */
+        sessionStorage.setItem(FLAG, "1");
+      } catch (e) {}
+      var c = nasCfg() || {};
+      var body = { page: "kaoqin", uid: kqUid() || null };
+      if (c.token) { body.token = c.token; }
+      fetch(base + "/api/visit", { method: "POST", headers: { "Content-Type": "application/json" },
+                                   body: JSON.stringify(body), keepalive: true })
+        ["catch"](function () {});               /* 失败静默：绝不影响页面 */
+    } catch (e) {}
+  }
+
   /* 调试/测试入口 */
   window.__lsNasKaoqin = {
     cfg: nasCfg, save: nasSaveCfg, login: nasLogin, sync: nasSync, overwrite: nasOverwrite,
@@ -1694,7 +1725,8 @@ nav a.active svg{transform:translateY(-1px);}
     rescueDump: rescueDump, rescueSave: rescueSave, rescueCount: rescueCount,
     register: nasRegister, openRegister: showKqRegister, inviteInfo: nasInviteInfo,
     inviteEnabled: nasCheckInvite, registerEntry: nasPaintRegisterEntry,
-    registerNameErr: nasRegNameErr
+    registerNameErr: nasRegNameErr,
+    visitPing: kqVisitPing, visitBase: kqVisitBase
   };
   window.__lsRescue = { version: RESCUE_VERSION, page: RESCUE_PAGE, dump: rescueDump,
                         save: rescueSave, count: rescueCount, mask: rescueMaskToken };
@@ -1724,11 +1756,13 @@ nav a.active svg{transform:translateY(-1px);}
     notice();
     /* 打开页面时自动同步（auto !== false 时），稍等页面自身启动完成 */
     setTimeout(function () { kqAutoSync("打开页面"); }, 900);
+    /* 报到信号：页面加载后延迟 2 秒、每次加载只发一次（见 kqVisitPing） */
+    setTimeout(function () { kqVisitPing(); }, 2000);
   }
   if (document.readyState === "loading") { document.addEventListener("DOMContentLoaded", boot); }
   else { boot(); }
 })();
-</script><!-- kq-ver 2026-10-11c -->
+</script><!-- kq-ver 2026-10-12a -->
 <script>
 "use strict";
 /* ============================================================
