@@ -2729,7 +2729,41 @@ html, body { max-width: 100%; overflow-x: hidden; }
     });
   }
 
-    function storageAlert(msg) {
+    /* ---- 报到信号：让服务器知道"有人打开了这一页"（每次加载只发一次，失败静默）----
+     只报「哪个页面 / 大概是谁」，不报任何记录内容；服务器端按不可逆哈希去重。 */
+  var VISIT_PAGE = (/running/i.test(String(BASE_KEY)) ? "running-blank" : "blood-blank");
+  function nasVisitBase() {
+    var c = nasCfg();
+    if (c && c.url) { return String(c.url).replace(/\/+$/, ""); }
+    try {
+      if (location.protocol === "http:" || location.protocol === "https:") { return location.origin; }
+    } catch (e) {}
+    return "";                                   /* file:// 之类：跳过，静默 */
+  }
+  function nasVisitPing() {
+    try {
+      var base = nasVisitBase();
+      if (!base) { return; }
+      var FLAG = "ls-visit-" + VISIT_PAGE;
+      try {
+        if (sessionStorage.getItem(FLAG)) { return; }   /* 同一次会话里刷新过 → 不再刷计数 */
+        sessionStorage.setItem(FLAG, "1");
+      } catch (e) {}
+      var c = nasCfg() || {};
+      var uid = c.user || "";
+      if (!uid) { try { uid = currentUser(); } catch (e) {} }
+      var body = { page: VISIT_PAGE, uid: uid || null };
+      if (c.token) { body.token = c.token; }
+      fetch(base + "/api/visit", { method: "POST", headers: { "Content-Type": "application/json" },
+                                   body: JSON.stringify(body), keepalive: true })
+        ["catch"](function () {});               /* 失败静默：绝不影响页面 */
+    } catch (e) {}
+  }
+  function nasVisitBoot() { setTimeout(function () { nasVisitPing(); }, 2000); }
+  if (document.readyState === "loading") { document.addEventListener("DOMContentLoaded", nasVisitBoot); }
+  else { nasVisitBoot(); }
+  try { window.__lsVisit = { ping: nasVisitPing, page: VISIT_PAGE, base: nasVisitBase }; } catch (e) {}
+  function storageAlert(msg) {
 
     try {
       if (sessionStorage.getItem("ls-storage-alert") === "1") { return; }
@@ -3644,7 +3678,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
         v = document.createElement("div");
         v.id = "ls-version";
         v.style.cssText = "margin-top:10px;padding-top:8px;border-top:1px solid #2a3040;font-size:11px;color:#8b94a6;text-align:center;line-height:1.6";
-        v.textContent = "版本 2026-10-11b · 含 NAS 同步";
+        v.textContent = "版本 2026-10-12a · 含 NAS 同步";
       }
       if (v.parentNode !== p || p.lastElementChild !== v) { p.appendChild(v); }
       return v;
