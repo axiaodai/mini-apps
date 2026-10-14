@@ -406,6 +406,71 @@ nav a.active svg{transform:translateY(-1px);}
 .form-row select:focus,.form-row input:focus{outline:none; border-color:var(--brand); box-shadow:0 0 0 3px var(--brand-soft);}
 .form-row .unit{flex:none; color:var(--muted); font-size:13px; font-weight:600;}
 /* ===== 杂项 ===== */
+/* ==== KQ-WAGE-CSS-BEGIN ==== */
+/* ==== 工资核对 / 收益汇总（新增） ==== */
+.wage-check{display:flex; flex-direction:column; gap:2px;}
+.wc-row{display:flex; align-items:center; gap:8px; padding:9px 0; border-bottom:1px dashed rgba(13,148,136,.14); min-width:0;}
+.wc-row:last-of-type{border-bottom:none;}
+.wc-k{flex:none; color:var(--muted); font-size:14px;}
+.wc-expect{background:linear-gradient(135deg,var(--brand-faint),var(--brand-soft)); border:1px solid var(--line); border-radius:13px; padding:11px 13px; margin-bottom:4px;}
+.wc-expect .wc-v{font-size:21px; font-weight:800; color:var(--brand-deep); font-variant-numeric:tabular-nums; letter-spacing:-.2px;}
+.wc-expect .wc-src{display:block; font-size:11.5px; color:var(--brand-deep); opacity:.8; margin-left:auto; text-align:right;}
+.wc-edit input,#wcNote{flex:1; min-width:0; border:1px solid var(--line); border-radius:11px; padding:10px 12px; font-size:15px; background:#f7faf8; color:var(--ink); min-height:44px; font-variant-numeric:tabular-nums;}
+.wc-edit input:focus,#wcNote:focus{outline:none; border-color:var(--brand); box-shadow:0 0 0 3px var(--brand-soft);}
+.wc-diff{display:flex; justify-content:space-between; align-items:center; gap:8px; background:#fbfcfb; border:1px solid var(--line-soft); border-radius:11px; padding:10px 12px; margin-top:8px; flex-wrap:wrap;}
+.wc-diff .k{font-size:13px; color:var(--muted);}
+.wc-diff .v{font-size:17px; font-weight:800; font-variant-numeric:tabular-nums;}
+.wc-diff .v.diff-neg{color:var(--chi);}
+.wc-diff .v.diff-pos{color:var(--ok);}
+.wc-diff .v.diff-zero{color:var(--faint);}
+.wage-guess-removed{display:none;}
+.wc-note-row{margin-top:2px;}
+.sum-grid{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
+.sum-tile{position:relative; border:1px solid var(--line-soft); border-radius:11px; padding:9px 10px 8px; background:#fbfcfb; min-width:0;}
+.sum-tile.sum-wide{grid-column:1 / -1; margin-top:8px;}
+.sum-tile .sv.diff-neg{color:var(--chi);}
+.sum-tile .sv.diff-pos{color:var(--ok);}
+.sum-tile .sv.diff-zero{color:var(--faint);}
+.sum-row .sv2.diff-neg{color:var(--chi);}
+.sum-row .sv2.diff-pos{color:var(--ok);}
+.sum-row .sv2.diff-zero{color:var(--faint);}
+.sum-tile .sk{font-size:11.5px; color:var(--muted); font-weight:600; line-height:1.35;}
+.sum-tile .sv{font-size:16px; font-weight:800; font-variant-numeric:tabular-nums; margin-top:3px; overflow-wrap:anywhere; letter-spacing:-.2px;}
+.sum-tile .ss{font-size:11px; color:var(--faint); margin-top:2px; overflow-wrap:anywhere;}
+.sum-list-btn{margin-top:6px; border:1px solid var(--line); background:#fff; color:var(--brand-deep); border-radius:9px; font-size:11.5px; font-weight:700; padding:3px 10px; cursor:pointer; min-height:26px;}
+.sum-list-btn:active{background:var(--brand-faint);}
+.sum-list{margin-top:10px; border-top:1px dashed var(--line); padding-top:8px;}
+.sum-row{display:flex; align-items:center; gap:8px; padding:5px 0; font-size:12.5px; border-bottom:1px dashed var(--line-soft); min-width:0;}
+.sum-row:last-child{border-bottom:none;}
+.sum-row .sm{flex:none; width:68px; color:var(--muted); font-variant-numeric:tabular-nums;}
+.sum-row .sv2{flex:1; text-align:right; font-weight:700; font-variant-numeric:tabular-nums; overflow-wrap:anywhere;}
+.sum-row .ss2{flex:none; width:52px; text-align:right; font-size:11px; color:var(--faint);}
+.sum-row.filled .ss2{color:var(--brand-deep);}
+.sum-row.total{font-weight:800; color:var(--brand-deep);}
+.wage-year{margin-top:12px; border-top:1px dashed var(--line); padding-top:10px;}
+.wy-btn{width:100%; display:flex; align-items:center; gap:8px; border:1px solid var(--line); background:var(--brand-faint); color:var(--brand-deep); border-radius:11px; padding:10px 12px; font-size:13.5px; font-weight:700; cursor:pointer; min-height:44px; text-align:left;}
+.wy-btn:active{background:var(--brand-soft);}
+.wy-btn .wy-sub{font-size:11.5px; font-weight:600; color:var(--muted);}
+.wy-btn .wy-arrow{margin-left:auto; font-size:11.5px; font-weight:600; color:var(--faint);}
+.wage-ylist{margin-top:8px;}
+.wage-trow{display:grid; grid-template-columns:46px 1fr 1fr 1.15fr 1fr; gap:5px; align-items:center; padding:6px 3px; border-bottom:1px dashed var(--line-soft); font-size:12px; cursor:pointer; min-width:0;}
+.wage-trow:last-of-type{border-bottom:none;}
+.wage-trow:hover{background:var(--brand-faint);}
+.wage-trow .tm{color:var(--muted); font-weight:700; font-variant-numeric:tabular-nums; white-space:nowrap;}
+.wage-trow .tm .th{font-style:normal; font-size:10px; color:var(--fang); margin-left:2px;}
+.wage-trow .t1,.wage-trow .t2,.wage-trow .t3{text-align:right; font-variant-numeric:tabular-nums; overflow-wrap:anywhere;}
+.wage-trow .t2.not-filled{color:var(--faint); font-size:11px;}
+.wage-trow .t3.diff-neg{color:var(--chi);}
+.wage-trow .t3.diff-pos{color:var(--ok);}
+.wage-trow .t3.diff-zero{color:var(--faint);}
+.wage-trow .t4{color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.wage-thead{cursor:default; font-size:11px; color:var(--faint); border-bottom:1px solid var(--line-soft);}
+.wage-thead:hover{background:transparent;}
+.wage-thead .t1,.wage-thead .t2,.wage-thead .t3{font-weight:700;}
+.wage-tfoot{cursor:default; margin-top:2px; border-top:1.5px solid var(--line); border-bottom:none; font-weight:800; color:var(--brand-deep); font-size:12.5px;}
+.wage-tfoot:hover{background:transparent;}
+.wage-tfoot .t4{color:var(--brand-deep); font-weight:700; font-size:11px;}
+/* ==== KQ-WAGE-CSS-END ==== */
 .foot{text-align:center; font-size:11.5px; color:var(--faint); padding:8px 14px 6px; line-height:1.7;}
 #toast{
   position:fixed; left:50%; bottom:calc(92px + env(safe-area-inset-bottom));
@@ -481,7 +546,7 @@ nav a.active svg{transform:translateY(-1px);}
 (function () {
   var KEY = "kaoqin_local_cloud_v1";     /* 本机存储：{v:2, items:{"<uid>":{d,t}}} */
   var KQ_APP = "kaoqin";                 /* 服务端槽位 */
-  var KQ_VER = "版本 2026-10-12a · 含 NAS 同步";   /* 只在 NAS 面板里显示；界面左下角不再显示版本 */
+  var KQ_VER = "版本 2026-10-14a · 含 NAS 同步";   /* 只在 NAS 面板里显示；界面左下角不再显示版本 */
   var realFetch = window.fetch ? window.fetch.bind(window) : null;
 
   /* ---------- 本机存储（按 uid 分开，每个 uid 一份 {d,t}） ---------- */
@@ -1762,7 +1827,7 @@ nav a.active svg{transform:translateY(-1px);}
   if (document.readyState === "loading") { document.addEventListener("DOMContentLoaded", boot); }
   else { boot(); }
 })();
-</script><!-- kq-ver 2026-10-12a -->
+</script><!-- kq-ver 2026-10-14a -->
 <script>
 "use strict";
 /* ============================================================
@@ -2087,6 +2152,357 @@ function money(v){
 }
 function num(v){ return (typeof v==="number" && isFinite(v)) ? v : null; }
 function r2(v){ return Math.round(v*100)/100; }
+/* ==== KQ-WAGE-CHECK-BEGIN ==== */
+/* ============================================================
+ * 工资核对（预发 / 实发 / 差额 / 备注） + 收益汇总 + 全年逐月一览
+ * ------------------------------------------------------------
+ * 预发 = 页面自己按新规则算出的「工资总计」原值（直接复用 calcFromStart 的结果，
+ *        这里只取数，不另写一套规则）；实发 = 用户自己填，按月存进账本
+ *        salary.actual["YYYY-M"] / salary.note["YYYY-M"]，每个月互不影响。
+ * 下面这些函数都是纯函数（不碰 DOM、不写存储），便于单测。
+ * ============================================================ */
+/* KQ-PURE-BEGIN */
+function fmtMoney2(v){
+  /* 金额统一 ￥1,234.56（千分位 + 两位小数）；空/NaN 显示 —，绝不显示 NaN */
+  if (v==null || typeof v!=="number" || !isFinite(v)) return "—";
+  var neg = v < 0, x = Math.abs(v);
+  var s = x.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return (neg?"-¥":"¥") + s;
+}
+function money2(v){ return fmtMoney2(num(v)); }
+/* 预发：复用页面现有工资总额；没有考勤的月份按源表预填（与页面口径一致） */
+function payoutOf(pid, y, m){
+  var w = monthWage(pid, y, m);
+  return w==null ? null : r2(w);
+}
+/* 差额 = 预发 − 实发；返回 { ok, diff, dir, text }
+ *   dir: "less" 实发少了（正数） | "more" 实发多了（负数） | "same" 一致 | null 缺数
+ *   缺数（没考勤 or 没填实发）时 diff 为 null，由页面显示提示文字，不做任何推断。 */
+function wageDiff(expect, actual){
+  var e = num(expect), a = num(actual);
+  if (e == null || a == null) return { ok:false, diff:null, dir:null, text:"" };
+  var d = r2(e - a);
+  var dir = (d > 0.005) ? "less" : (d < -0.005 ? "more" : "same");
+  return { ok:true, diff:d, dir:dir, text:"" };
+}
+
+/* 总额差额（总计区域用）：只算「已填实发」的月份，不用预发冒充实发。
+ *   h1Diff  = 上半年（1-6 月）预发合计 − 实发合计
+ *   yearDiff= 全年（1-12 月）预发合计 − 实发合计
+ *   一个月都没填 -> 两个都是 null，由页面显示 — 并提示先填。 */
+function wageDiffSummary(pid, y, actualMap){
+  var A = actualMap || {}, h1 = { expect:0, actual:0, n:0 }, yr = { expect:0, actual:0, n:0 };
+  for (var m=1; m<=12; m++){
+    var pv = payoutOf(pid, y, m);
+    var av = A[y + "-" + m];
+    if (av == null || !isFinite(Number(av))) continue;   /* 没填实发的月份不参与 */
+    /* 全年桶累加 1—12 月；上半年桶再单独累加 1—6 月 */
+    if (pv != null) yr.expect += pv;
+    yr.actual += num(av);
+    yr.n++;
+    if (m <= 6){
+      if (pv != null) h1.expect += pv;
+      h1.actual += num(av);
+      h1.n++;
+    }
+  }
+  var wrap = function(o){
+    if (!o.n) return { ok:false, diff:null, dir:null, n:0, expect:null, actual:null };
+    var d = r2(o.expect - o.actual);
+    return { ok:true, diff:d, dir:(d>0.005 ? "less" : (d<-0.005 ? "more" : "same")),
+             n:o.n, expect:r2(o.expect), actual:r2(o.actual) };
+  };
+  return { h1:wrap(h1), year:wrap(yr) };
+}
+
+/* 某月是否算「有收益数据」：有考勤记录（或本地编辑）→ 页面能算出工资 */
+function hasIncomeMonth(pid, y, m){
+  var r = calcFromStart(pid, y, m);
+  return !!(r.any || r.edited);
+}
+/* 某月实发工资（用户填的），没填返回 null */
+function actualOf(pid, y, m){ return payActualBy(pid, y+"-"+m); }
+/* 某月差异备注（用户填的），没填返回 "" */
+function actualNoteOf(pid, y, m){ return payNoteBy(pid, y+"-"+m); }
+
+/* 收益汇总（纯函数，不碰 DOM）：
+ *   summary.months[]  每月 { m, expect, actual, used, source, filled }
+ *   actual   实际收益 = 只累加「已填实发」的月份（未填不偷换成预发）
+ *   预计     按已有月份的月均实发推算到 12 月：
+ *              已填实发 → 用实发；有考勤但没填实发 → 用当月预发；两者都没有 → 用月均
+ *              一个月实发都没填 → 月均退化为「有考勤月份的预发均值（或月薪）」
+ *   h1 = 1—6 月，year = 1—12 月。 */
+function incomeSummary(pid, y, actualMap){
+  var A = actualMap || {};
+  var kOf = function(mm){ return y + "-" + mm; };
+  var filled = [], known = [];
+  for (var m=1; m<=12; m++){
+    var p = payoutOf(pid, y, m);
+    if (p != null) known.push(p);
+    if (A[kOf(m)] != null) filled.push(num(A[kOf(m)]));
+  }
+  var monthSum = known.reduce(function(x,v){ return x+v; }, 0);
+  var monthAvg = known.length ? r2(monthSum / known.length) : null;
+  var fillSum = filled.reduce(function(x,v){ return x+v; }, 0);
+  var avgActual = filled.length ? r2(fillSum / filled.length) : null;
+  var fallback = (avgActual != null) ? avgActual : ((monthAvg != null) ? monthAvg : r2(getSalary(pid, y, 1)));
+  var months = [];
+  for (var m2=1; m2<=12; m2++){
+    var pv = payoutOf(pid, y, m2);
+    var av = A[kOf(m2)];
+    var hasA = (av != null && isFinite(num(av)));
+    var src = "推算", used = fallback;
+    if (hasA){ src = "实发"; used = r2(num(av)); }
+    else if (pv != null){ src = "预发"; used = pv; }
+    months.push({ m:m2, expect:pv, actual: hasA ? r2(num(av)) : null, used:used, source:src, filled:hasA });
+  }
+  var sumSrc = function(lo, hi, want){
+    var s = 0;
+    for (var i=lo; i<=hi; i++){
+      var r = months[i-1];
+      if (want === "actual"){ if (r.filled) s += r.actual; }
+      else s += r.used;
+    }
+    return r2(s);
+  };
+  return { pid:pid, year:y, months:months,
+    h1Expect: sumSrc(1,6,"expect"),  yearExpect: sumSrc(1,12,"expect"),
+    h1Actual: sumSrc(1,6,"actual"),  yearActual: sumSrc(1,12,"actual"),
+    h1Filled: (function(){ var n=0; for (var i=1;i<=6;i++) if (months[i-1].filled) n++; return n; })(),
+    yearFilled: (function(){ var n=0; for (var i=1;i<=12;i++) if (months[i-1].filled) n++; return n; })(),
+    yearTotal: sumSrc(1,12,"actual"),
+    avgActual: avgActual, monthAvg: monthAvg, base: fallback,
+    basis: (avgActual != null
+      ? "按已有 " + filled.length + " 个月的月均实发（" + money2(avgActual) + "）推算到 12 月"
+      : (monthAvg != null
+        ? "1 个月实发都没填 → 退回按有考勤月份的月均预发（" + money2(monthAvg) + "）推算到 12 月"
+        : "还没有任何考勤数据 → 按你的默认月薪（" + money2(fallback) + "）推算到 12 月")),
+    note: (function(){
+      if (filled.length && filled.length < 12) return "仅含已填 " + filled.length + " 个月";
+      if (!filled.length) return "还没填实发工资";
+      return "12 个月都有实发";
+    })()
+  };
+}
+
+/* ---------- 工资核对卡片（月度页，紧挨「工资明细」） ---------- */
+/* KQ-PURE-END */
+function renderMonthWageCheck(){
+  var pid = state.person, y = state.year, m = state.month;
+  var r = calcFromStart(pid, y, m);
+  var expect = payoutOf(pid, y, m);
+  var actual = actualOf(pid, y, m);
+  var note = actualNoteOf(pid, y, m);
+
+  var d = wageDiff(expect, actual);
+  var diffTxt = "", diffCls = "diff-zero";
+  if (d.ok){
+    diffCls = (d.dir === "less") ? "diff-neg" : (d.dir === "more" ? "diff-pos" : "diff-zero");
+    diffTxt = (d.dir === "less") ? ("实发少了 " + money2(d.diff))
+            : (d.dir === "more") ? ("实发多了 " + money2(-d.diff))
+            : "一致";
+  } else if (expect == null){
+    diffTxt = "本月还没有工资总计，先补录考勤";
+  } else {
+    diffTxt = "请填实发工资";
+  }
+
+  return '<div class="card"><h3><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" ' +
+    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M8 7h8"/><path d="M17 9l3 3-3 3M7 9l-3 3 3 3"/></svg>工资核对</h3>' +
+    '<div class="wage-check">' +
+      '<div class="wc-row wc-expect"><span class="wc-k">工资预发</span>' +
+        '<span class="wc-v">' + money2(expect) + '</span>' +
+        '<span class="wc-src">系统按新规则自动计算</span></div>' +
+      '<div class="wc-row wc-edit"><label class="wc-k" for="wcActual">实发工资</label>' +
+        '<input id="wcActual" type="number" step="0.01" min="0" inputmode="decimal" ' +
+          'value="' + (actual!=null ? r2(actual) : "") + '" placeholder="照工资条填，可留空" ' +
+          'oninput="onWageActualInput()" onchange="onWageActualCommit()"></div>' +
+      '<div class="wc-diff"><span class="k">差额（预发 − 实发）</span><span class="v ' + diffCls + '">' + diffTxt + '</span></div>' +
+      '<div class="wc-note-row"><label class="wc-k" for="wcNote">差异备注</label>' +
+        '<input id="wcNote" type="text" value="' + esc(note) + '" placeholder="选填，例如：扣社保 380" ' +
+          'oninput="onWageNoteInput(this)"></div>' +
+      '<div class="hint">预发直接取本页「工资总计（新规则）」；实发与备注按月存进账本（跟着同步走、可导出导入）。' +
+        (expect!=null ? '本月日薪 ' + money2(r.daily) + ' · 时薪 ' + money2(r.hourly) + '。' : '') +
+        '没填实发时只提示「请填实发工资」，不算差额。</div>' +
+    '</div>' +
+    renderYearWageTable(pid, y) + '</div>';
+}
+
+/* ---------- 全年逐月一览（可折叠；12 行，点行跳到那个月） ----------
+ * 差额列与月度页「工资核对」卡同源：都用 wageDiff(预发, 实发)。 */
+function renderYearWageTable(pid, y){
+  var A = payActualOf(pid);
+  var rows = "", filledN = 0, sumE = 0, sumA = 0, anyE = false;
+  for (var m=1; m<=12; m++){
+    var k = y + "-" + m;
+    var expect = payoutOf(pid, y, m);
+    var av = A[k];
+    var hasA = (av != null && isFinite(Number(av)));
+    if (hasA) filledN++;
+    var d = wageDiff(expect, hasA ? Number(av) : null);
+    if (expect != null) { sumE += expect; anyE = true; }
+    if (hasA) sumA += Number(av);
+    var nt = payNoteBy(pid, k);
+    if (nt.length > 12) nt = nt.slice(0, 12) + "…";
+    rows += '<div class="wage-trow' + (hasA ? " filled" : " not-filled") + '" data-month="' + m +
+      '" data-diff="' + (d.ok ? d.diff : "") + '" onclick="jumpMonth(' + m + ')">' +
+      '<span class="tm">' + m + '月' + (m<=6 ? '<i class="th">上</i>' : '') + '</span>' +
+      '<span class="t1">' + money2(expect) + '</span>' +
+      '<span class="t2' + (hasA ? "" : " not-filled") + '">' + (hasA ? money2(Number(av)) : "—（未填实发）") + '</span>' +
+      '<span class="t3 ' + diffClsOf(d) + '">' + diffTextOf(d) + '</span>' +
+      '<span class="t4" title="' + esc(nt) + '">' + (nt ? esc(nt) : "—") + '</span></div>';
+  }
+  var ds = wageDiffSummary(pid, y, A);
+  var totE = money2(anyE ? r2(sumE) : null);
+  var totA = money2(filledN ? r2(sumA) : null);
+  return '<div class="wage-year">' +
+    '<button class="wy-btn" onclick="toggleIncOpen(\'wy\')">全年逐月一览' +
+      '<span class="wy-sub">已填 ' + filledN + '/12 个月</span>' +
+      '<span class="wy-arrow">展开 / 收起</span></button>' +
+    '<div class="wage-ylist" id="incs-wy" style="display:' + (INC_OPEN["wy"] ? "block" : "none") + '">' +
+      '<div class="wage-trow wage-thead"><span class="tm">月</span><span class="t1">预发</span>' +
+        '<span class="t2">实发</span><span class="t3">差额</span><span class="t4">备注</span></div>' + rows +
+      '<div class="wage-trow wage-tfoot" data-total="1"><span class="tm">合计</span>' +
+        '<span class="t1">' + totE + '</span><span class="t2">' + totA + '</span>' +
+        '<span class="t3 ' + diffClsOf(ds.year) + '">' + diffTextOf(ds.year) + '</span>' +
+        '<span class="t4">' + (filledN ? ('已填 ' + filledN + ' 个月') : '还没填实发') + '</span></div>' +
+      '<div class="hint">差额 = 该月预发 − 该月实发（正数红字 = 实发少了，负数绿字 = 实发多了，0 = 一致）；' +
+        '没填实发的月份显示 — 并标注「未填实发」。合计行 = 12 个月的预发合计 / 实发合计 / 差额合计' +
+        '（实发与差额只累加已填的月份）。点任意一行跳到那个月去填 / 改。</div>' +
+    '</div></div>';
+}
+/* 跳到指定月份（跨年也安全；按月独立保存，不互相影响） */
+function jumpMonth(m){
+  if (!(m >= 1 && m <= 12)) return;
+  state.month = m;
+  location.hash = "#/month";
+  renderPersonSwitch();
+  render();
+}
+var _wageTimer = null;
+function onWageActualInput(){
+  var el = document.getElementById("wcActual");
+  if (!el) return;
+  var raw = el.value;
+  if (raw === "" || raw == null){ setPayActual(state.person, state.year, state.month, null); }
+  else {
+    var v = parseFloat(raw);
+    if (isNaN(v) || v < 0){ return; }                   /* 输入中途不落账本 */
+    setPayActual(state.person, state.year, state.month, r2(v));
+  }
+  clearTimeout(_wageTimer);
+  _wageTimer = setTimeout(function(){
+    var a = document.activeElement;
+    if (a && (a.id === "wcActual" || a.id === "wcNote")) return;   /* 正在输入 → 不重绘，免得丢焦点 */
+    render();
+  }, 700);
+}
+function onWageActualCommit(){
+  var el = document.getElementById("wcActual");
+  if (!el) return;
+  var raw = el.value;
+  if (raw === "" || raw == null){ setPayActual(state.person, state.year, state.month, null); }
+  else {
+    var v = parseFloat(raw);
+    if (isNaN(v) || v < 0){ toast("实发工资要填数字（可留空）"); return; }
+    setPayActual(state.person, state.year, state.month, r2(v));
+  }
+  render();
+}
+function onWageNoteInput(el){
+  if (!el) return;
+  setPayNote(state.person, state.year, state.month, String(el.value || ""));
+}
+
+/* ---------- 收益汇总（年度页「总计」区域 + 收益页各一份） ---------- */
+var INC_OPEN = {};        /* 展开状态：key -> true，重绘后仍记得 */
+function toggleIncOpen(key){
+  var id = "incs-" + key;
+  var el = document.getElementById(id);
+  if (!el) return;
+  var open = el.style.display !== "none";
+  el.style.display = open ? "none" : "block";
+  INC_OPEN[key] = !open;
+}
+function incomeSumWrapper(){
+  var pid = state.person, y = state.year;
+  var A = payActualOf(pid);
+  return '<div class="card"><h3>收益汇总</h3>' + incomeSummaryCard(pid, y, A, "y") + '</div>';
+}
+/* 差额文案：正数红字「实发少了 ￥X」/ 负数绿字「实发多了 ￥X」/ 0 灰字「一致」 */
+function diffTextOf(d){
+  if (!d || !d.ok) return "—";
+  if (d.dir === "less") return "实发少了 " + money2(d.diff);
+  if (d.dir === "more") return "实发多了 " + money2(-d.diff);
+  return "一致";
+}
+function diffClsOf(d){
+  if (!d || !d.ok) return "diff-zero";
+  return (d.dir === "less") ? "diff-neg" : (d.dir === "more" ? "diff-pos" : "diff-zero");
+}
+function incomeSummaryCard(pid, y, A, key){
+  var s = incomeSummary(pid, y, A || {});
+  var ds = wageDiffSummary(pid, y, A || {});
+  var tile = function(kk, label, value, sub){
+    return '<div class="sum-tile"><div class="sk">' + label + '</div>' +
+      '<div class="sv">' + value + '</div><div class="ss">' + sub + '</div>' +
+      '<button class="sum-list-btn" onclick="toggleIncOpen(\'' + key + kk + '\')">明细</button></div>';
+  };
+  var details = function(kk, lo, hi, want){
+    var rows = "", tot = 0;
+    for (var i=lo; i<=hi; i++){
+      var mm = s.months[i-1];
+      var v = 0, txt = "", cls = "";
+      if (want === "actual"){
+        v = mm.filled ? mm.actual : null;
+      } else if (want === "diff"){
+        var dd = wageDiff(mm.expect, mm.actual);
+        txt = diffTextOf(dd); cls = diffClsOf(dd);
+        v = dd.ok ? dd.diff : null;
+      } else {
+        v = mm.used;
+      }
+      if (v != null) tot += v;
+      rows += '<div class="sum-row' + (mm.filled ? " filled" : "") + '"><span class="sm">' + y + '-' + mm.m +
+        '月</span><span class="sv2 ' + cls + '">' + (want === "diff" ? txt : money2(v)) + '</span>' +
+        '<span class="ss2">' + mm.source + '</span></div>';
+    }
+    var totalTxt;
+    if (want === "actual") totalTxt = money2(lo === 1 ? s.h1Actual : s.yearActual);
+    else if (want === "diff") totalTxt = diffTextOf(lo === 1 ? ds.h1 : ds.year);
+    else totalTxt = money2(lo === 1 ? s.h1Expect : s.yearExpect);
+    var totalSub = (want === "actual") ? "只累加已填实发" : (want === "diff" ? "预发 − 实发（已填月）" : "实发 / 预发 / 推算");
+    return '<div class="sum-list" id="incs-' + key + kk + '" style="display:' +
+      (INC_OPEN[key + kk] ? 'block' : 'none') + '">' + rows +
+      '<div class="sum-row total"><span class="sm">合计</span><span class="sv2">' +
+      totalTxt + '</span><span class="ss2">' + totalSub + '</span></div></div>';
+  };
+  return '<div class="sum-grid">' +
+      tile("h1e", "上半年预计收益", money2(s.h1Expect), "1—6 月 · 推算") +
+      tile("h1a", "上半年实际收益", money2(s.h1Actual), "1—6 月 · " + s.note) +
+      tile("yye", "全年预计收益", money2(s.yearExpect), "1—12 月 · 推算") +
+      tile("yya", "全年累计收益", money2(s.yearActual), "1—12 月 · " + s.note) +
+    '</div>' +
+    '<div class="sum-tile sum-wide"><div class="sk">上半年差额（预发合计 − 实发合计 · 1—6 月）</div>' +
+      '<div class="sv ' + diffClsOf(ds.h1) + '">' + diffTextOf(ds.h1) + '</div>' +
+      '<div class="ss">' + (ds.h1.ok ? ('仅含已填实发 ' + ds.h1.n + ' 个月 · 预发 ' + money2(ds.h1.expect) +
+                            ' − 实发 ' + money2(ds.h1.actual)) : '还没填实发工资，先到月度页填') + '</div>' +
+      '<button class="sum-list-btn" onclick="toggleIncOpen(\'' + key + 'h1d\')">逐月明细</button></div>' +
+    '<div class="sum-tile sum-wide"><div class="sk">全年累计差额（预发合计 − 实发合计 · 1—12 月）</div>' +
+      '<div class="sv ' + diffClsOf(ds.year) + '">' + diffTextOf(ds.year) + '</div>' +
+      '<div class="ss">' + (ds.year.ok ? ('仅含已填实发 ' + ds.year.n + ' 个月 · 预发 ' + money2(ds.year.expect) +
+                             ' − 实发 ' + money2(ds.year.actual)) : '还没填实发工资，先到月度页填') + '</div>' +
+      '<button class="sum-list-btn" onclick="toggleIncOpen(\'' + key + 'yyd\')">逐月明细</button></div>' +
+    details("h1e", 1, 6, "expect") + details("h1a", 1, 6, "actual") +
+    details("h1d", 1, 6, "diff") +
+    details("yye", 1, 12, "expect") + details("yya", 1, 12, "actual") +
+    details("yyd", 1, 12, "diff") +
+    '<div class="hint"><b>实际收益 / 差额</b>只累加已填的「实发工资」月份（未填的月份不算，旁边标注含几个月）；' +
+      '<b>预计收益</b> ' + esc(s.basis) + '；没填实发、也没考勤的月份按上面的月均代入。' +
+      '上半年 = 1—6 月，全年 = 1—12 月。点每块「明细 / 逐月明细」可看逐月数值与来源（实发 / 预发 / 推算）。</div>';
+}
+/* ==== KQ-WAGE-CHECK-END ==== */
+
 function toast(msg){
   const t = document.getElementById("toast");
   t.textContent = msg; t.classList.add("show");
@@ -2232,6 +2648,40 @@ function monthWage(pid, y, m){
   return s ? num(s["总计"]) : null;
 }
 
+/* KQ-WAGE-PAY-BEGIN */
+/* ===== 实发工资 / 差异备注（存在账本的 salary 里，跟着同步走、可导入导出） =====
+ * 形如 salary = {"<年月>": {<人员>: 月薪}, actual: {"<年月>": {<人员>: 实发}},
+ *                note: {"<年月>": {<人员>: "备注文字"}}}
+ * 老账本没有 actual / note 时按空处理，不报错（向后兼容）。 */
+function payActualOf(pid){ return (SAL.actual && SAL.actual[pid]) ? SAL.actual[pid] : {}; }
+function payActualBy(pid, key){
+  var t = payActualOf(pid), v = t[key];
+  return (v==null || !isFinite(Number(v))) ? null : Number(v);
+}
+function setPayActual(pid, y, m, v){
+  var key = y + "-" + m;
+  if (!SAL.actual) SAL.actual = {};
+  if (!SAL.actual[pid]) SAL.actual[pid] = {};
+  if (v == null){ delete SAL.actual[pid][key]; }
+  else { SAL.actual[pid][key] = r2(v); }
+  if (!Object.keys(SAL.actual[pid]).length) delete SAL.actual[pid];
+  if (!Object.keys(SAL.actual).length) delete SAL.actual;
+  saveSal();
+}
+function payNoteOf(pid){ return (SAL.note && SAL.note[pid]) ? SAL.note[pid] : {}; }
+function payNoteBy(pid, key){ var t = payNoteOf(pid), v = t[key]; return (v==null ? "" : String(v)); }
+function setPayNote(pid, y, m, txt){
+  var key = y + "-" + m, s = String(txt==null ? "" : txt).trim();
+  if (!SAL.note) SAL.note = {};
+  if (!SAL.note[pid]) SAL.note[pid] = {};
+  if (!s){ delete SAL.note[pid][key]; }
+  else { SAL.note[pid][key] = s; }
+  if (!Object.keys(SAL.note[pid]).length) delete SAL.note[pid];
+  if (!Object.keys(SAL.note).length) delete SAL.note;
+  saveSal();
+}
+
+/* KQ-WAGE-PAY-END */
 /* ===== 人员切换 ===== */
 function renderPersonSwitch(){
   const box = document.getElementById("personSwitch");
@@ -2373,6 +2823,9 @@ function renderMonth(){
         (hasEdit?'<span><i style="background:var(--ed);border-radius:50%"></i>本地编辑</span>':"")+
       '</div>'+
     '</div>'+
+/* KQ-WAGE-MONTH-BEGIN */
+    renderMonthWageCheck()+
+/* KQ-WAGE-MONTH-END */
     '<div class="card"><h3>'+(hasEdit?'<span class="tag">含本地编辑</span>':"")+'<span style="flex:1"></span>'+m+'月统计</h3><div class="stat-grid">'+
       '<div class="stat ban"><div class="ic"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3 8-8"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div><div class="num">'+r2(st["班"]||0)+'<small>天</small></div><div class="t">出勤（班）</div></div>'+
       '<div class="stat xiu"><div class="ic"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12h8"/></svg></div><div class="num">'+r2(st["休"]||0)+'<small>天</small></div><div class="t">休班</div></div>'+
@@ -2755,6 +3208,9 @@ function renderYear(){
         '</tbody></table>'+
       '<div class="hint">班/休/放/加班与工资按本地编辑+新规则重算；无考勤月份按源表预填。'+(totalEdit?"带 * 的月份含本地编辑。":"")+'</div>'+
     '</div>'+
+/* KQ-WAGE-YEAR-BEGIN */
+    incomeSumWrapper()+
+/* KQ-WAGE-YEAR-END */
     '<div class="card"><h3>月度工资总计</h3><div class="bars">'+bars+'</div>'+
       '<div class="hint">工资为新规则计算结果（无考勤月份按源表预填）。</div>'+
     '</div>'+
@@ -3009,6 +3465,9 @@ function renderIncome(){
     '<div class="card"><h3>收益明细</h3>'+
       (rows || '<div class="warn" style="margin-top:0">暂无记录，点下方按钮新增。</div>')+
     '</div>'+
+/* KQ-WAGE-INCOME-BEGIN */
+    '<div class="card"><h3>收益汇总</h3>'+incomeSummaryCard(pid, y, payActualOf(pid), "i")+'</div>'+
+/* KQ-WAGE-INCOME-END */
     '<button class="btn-add" onclick="openIncomeEdit(null)">＋ 新增收益</button>'+
     '<div class="foot">收益记录保存在本机浏览器（右上角管理可导出）</div>';
   view.classList.remove("fade-in"); void view.offsetWidth; view.classList.add("fade-in");
@@ -3126,3 +3585,4 @@ if (UID){ loadFromServer(); checkAutoInstallment(); } else openPinGate();
 </script>
 </body>
 </html>
+
