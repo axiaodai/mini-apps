@@ -2763,6 +2763,307 @@ html, body { max-width: 100%; overflow-x: hidden; }
   if (document.readyState === "loading") { document.addEventListener("DOMContentLoaded", nasVisitBoot); }
   else { nasVisitBoot(); }
   try { window.__lsVisit = { ping: nasVisitPing, page: VISIT_PAGE, base: nasVisitBase }; } catch (e) {}
+
+  /* ==== 版本检测 + 用户确认后一键更新（血/跑/考勤三页同一份实现）=================
+     检测：加载后 3 秒首检、之后每 10 分钟一次、回到前台再检一次；
+           地址优先 NAS 配置里的 url，其次 location.origin；file:// 直接跳过。
+     提示：底部横幅（不是模态弹窗，不打断操作）。点「立即更新」才动——
+           先只读备份本机全部数据（写独立备份键），再 location.replace 强制拉新版；
+           点「以后再说」→ 24 小时内（本机）不再提示，面板里仍可手动「检查更新」。
+     数据零风险：更新路径不调用任何写账本 / 写同步配置的函数，只写那一个备份键；
+           即使更新失败也只是刷新回旧版，数据一点不动。备份是**全同步**只读快照
+           （逐键 getItem 读完立刻写备份键），写完才 location.replace。
+     注意：整段包在 IIFE 里 —— 献血 / 跑步 / 考勤三页共用同一份实现，页面里还有别的模块，
+           `var` 落到全局会和页面自己的变量撞名（PAGE_VERSION 之类）。              */
+(function () {
+  var PAGE_ID = "blood-blank";           /* 版本检测：本页在 /api/version 里的标识（注入时替换） */
+  var PAGE_VERSION = "2026-10-14c";      /* 构建期写死的「本页版本」；与服务端解析结果比 */
+  var UPDATE_BACKUP_KEY = "mini-apps-update-backup-v1";
+  var UPDATE_TRACE_KEY = "mini-apps-update-trace-v1";   /* 只给自动化测试看：更新路径里的 setItem 键名 */
+  var UPDATE_IGNORE_KEY = "mini-apps-update-ignore-v1";
+  var UPDATE_IGNORE_MS = 24 * 60 * 60 * 1000;
+  /* 0 = 没弹过；1 = 本轮刚弹过（防止 setInterval 排第二次横幅）；-1 = 本轮已经问过用户了。
+     注意：只在**当前这一次页面加载**里有效（不能跨刷新），刷新后必须重新看一眼新版本 ——
+     否则"以后再说"会跟着会话一直沉默下去，那就成了替用户决定「不更新」。 */
+  var verAsked = 0;
+  var verServer = null, verTimer = null, verBannerEl = null;
+  function verPageSelf() { return { id: PAGE_ID, version: PAGE_VERSION }; }
+  function verNow() { try { return Date.now(); } catch (e) { return 0; } }
+  function verBase() {
+    try { var c = (typeof nasCfg === "function") ? nasCfg() : null; if (c && c.url) { return String(c.url).replace(/\/+$/, ""); } } catch (e) {}
+    try { if (location.protocol === "http:" || location.protocol === "https:") { return String(location.origin || ""); } } catch (e) {}
+    return "";
+  }
+  function verTime(t) {
+    try {
+      var d = new Date(Number(t) || verNow()), p = function (n) { return (n < 10 ? "0" : "") + n; };
+      return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes());
+    } catch (e) { return ""; }
+  }
+  function verWidget(kind, t) {
+    try {
+      var el = document.getElementById(kind === "panel" ? "ls-update-panel-msg" : "ls-update-msg");
+      if (!el) { return; }
+      if (!t) { el.textContent = ""; el.style.display = "none"; return; }
+      el.style.display = "block"; el.textContent = t;
+      el.style.color = (kind === "panel") ? "#9fd0ff" : "#dfe6ef";
+    } catch (e) {}
+  }
+  function verIgnoreSet() { try { localStorage.setItem(UPDATE_IGNORE_KEY, String(verNow() + UPDATE_IGNORE_MS)); } catch (e) {} }
+  /* 只有「点了以后再说」（本机 24 小时）才静音；会话标记只用于当前这次加载去重 */
+  function verMute() {
+    if (verAsked === -1) { return true; }
+    var raw = "";
+    try { raw = localStorage.getItem(UPDATE_IGNORE_KEY) || ""; } catch (e) { return false; }
+    if (!raw) { return false; }
+    if (/^\d+$/.test(raw)) { return Number(raw) > verNow(); }
+    try { return !!(JSON.parse(raw) || {}).on; } catch (e) { return false; }
+  }
+  /* 底部横幅：高于底部导航 / 左下角工具，低于页面 modal 弹层 */
+  function verBannerOffset() {
+    try {
+      var nav = document.querySelector("nav.tabbar") || document.querySelector("nav");
+      if (nav) {
+        var r = nav.getBoundingClientRect();
+        var cs = window.getComputedStyle(nav);
+        var mb = parseFloat(cs.marginBottom || "0") || 0;
+        if (r.height > 20 && r.top > 0) { return Math.max(16, Math.round(window.innerHeight - r.top - mb) + 8); }
+      }
+    } catch (e) {}
+    return 96;
+  }
+  function verHideBanner() {
+    try { if (verBannerEl && verBannerEl.parentNode) { verBannerEl.parentNode.removeChild(verBannerEl); } } catch (e) {}
+    verBannerEl = null;
+  }
+  function verShowBanner(sv) {
+    try {
+      verHideBanner();
+      if (!sv || !sv.version) { return; }
+      var mine = verPageSelf().version;
+      var bar = document.createElement("div");
+      bar.id = "ls-update-banner";
+      bar.style.cssText = "position:fixed;left:8px;right:8px;bottom:" + verBannerOffset() + "px;z-index:66;" +
+        "box-sizing:border-box;background:#171a21;color:#e6e8ee;border:1px solid #3a4358;border-radius:12px;" +
+        "padding:8px 10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;" +
+        "font:12.5px/1.5 -apple-system,'Microsoft YaHei',sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.45)";
+      var txt = document.createElement("div");
+      txt.id = "ls-update-text";
+      txt.style.cssText = "flex:1 1 150px;min-width:0;overflow-wrap:anywhere";
+      txt.textContent = "发现新版本 v" + sv.version + "（当前 v" + mine + "）";
+      var box = document.createElement("div");
+      box.style.cssText = "display:flex;gap:8px;flex:0 0 auto";
+      var go = document.createElement("button");
+      go.id = "ls-update-go";
+      go.type = "button";
+      go.textContent = "立即更新";
+      go.style.cssText = "padding:7px 12px;border-radius:9px;border:none;background:#1f6f4a;color:#fff;font-weight:700;cursor:pointer;white-space:nowrap";
+      var no = document.createElement("button");
+      no.id = "ls-update-later";
+      no.type = "button";
+      no.textContent = "以后再说";
+      no.style.cssText = "padding:7px 12px;border-radius:9px;border:1px solid #3a4358;background:#232936;color:#cfd8e3;cursor:pointer;white-space:nowrap";
+      var msg = document.createElement("div");
+      msg.id = "ls-update-msg";
+      msg.style.cssText = "display:none;flex:1 1 100%;font-size:11.5px;color:#dfe6ef";
+      box.appendChild(go); box.appendChild(no);
+      bar.appendChild(txt); bar.appendChild(box); bar.appendChild(msg);
+      document.body.appendChild(bar);
+      verBannerEl = bar;
+      go.addEventListener("click", function (e) { e.preventDefault(); verUpdate(sv); });
+      no.addEventListener("click", function (e) {
+        e.preventDefault();
+        verAsked = -1;                  /* 这次加载里不再打扰；24 小时的门槛写在 localStorage */
+        verIgnoreSet();
+        verHideBanner();
+        verWidget("banner", "");
+      });
+      return bar;
+    } catch (e) { return null; }
+  }
+  /* 只读备份：把本机全部数据写进**独立备份键**（不动任何账本键/同步配置）
+     做法：只用 getItem / length / key 逐个读，读完立刻写备份键 —— **全同步**，
+     所以「写备份」一定发生在 location.replace 之前，中间没有任何异步窗口。
+     （页面的「导出全部本机数据（抢救用）」是另一套更全的只读导出，需要时用户自己点。） */
+  function verBackupNow() {
+    var snap = { at: verNow(), at_text: verTime(verNow()), page: PAGE_ID,
+                 version: (verServer && verServer.version) || "",
+                 current_version: PAGE_VERSION, kind: "update-backup", v: 1,
+                 data: { localStorage: {}, sessionStorage: {}, cookies: "" } };
+    try {
+      var ls = window.localStorage;
+      for (var i = 0; i < ls.length; i++) {
+        var k = ls.key(i);
+        if (k === null) { continue; }
+        var v = null;
+        try { v = ls.getItem(k); } catch (e2) { v = null; }
+        snap.data.localStorage[k] = { value: v };
+      }
+    } catch (e) {}
+    try {
+      var ss = window.sessionStorage;
+      for (var i2 = 0; i2 < ss.length; i2++) {
+        var k2 = ss.key(i2);
+        if (k2 === null) { continue; }
+        snap.data.sessionStorage[k2] = { value: ss.getItem(k2) };
+      }
+    } catch (e) {}
+    try { snap.data.cookies = String(document.cookie || ""); } catch (e) {}
+    snap.data_keys = Object.keys(snap.data.localStorage);
+    var ok = false;
+    try { localStorage.setItem(UPDATE_BACKUP_KEY, JSON.stringify(snap)); ok = true; } catch (e) {}
+    snap.written = ok;
+    return Promise.resolve(snap);
+  }
+  /* 点「立即更新」：① 只读备份 ② 强制拉新版（带 ?v= 绕开缓存）——数据零改动 */
+  function verUpdate(sv) {
+    sv = sv || verServer || {};
+    var url = (location.pathname || "/") + "?v=" + encodeURIComponent(sv.version || "");
+    var mine = verPageSelf().version;
+    if (!sv.version || sv.version === mine) {
+      verWidget("banner", "已是最新版本 v" + mine);
+      setTimeout(verHideBanner, 1600);
+      return;
+    }
+    verWidget("banner", "正在备份本机数据…（只读，不会改动任何记录）");
+    verPageSelf().updating = true;
+    try {
+      /* 让"更新路径里都写了哪些键"能跨导航被读到：这是页面自己写的一条**测试痕迹**
+         （白名单键名，不含任何数据内容）；不是必需的，失败也无所谓。 */
+      var w = (window.__lsWrites || []).map(function (x) { return x.k; });
+      if (!w.length) { w = [UPDATE_BACKUP_KEY]; }
+      localStorage.setItem(UPDATE_TRACE_KEY, JSON.stringify({ at: verNow(), keys: w }));
+    } catch (e) {}
+    verBackupNow().then(function () {
+      verWidget("banner", "数据已备份，正在加载新版本…");
+      try {
+        location.replace(url);
+      } catch (e) {
+        verWidget("banner", "自动跳转失败，请手动刷新页面");
+      }
+    });
+  }
+  /* 更新成功后的一次性轻提示（?v= 带新版本进来时） */
+  function verToastDone() {
+    try {
+      var m = /[?&]v=([^&]+)/.exec(location.search || "");
+      if (!m) { return; }
+      var v = decodeURIComponent(m[1]);
+      if (v !== PAGE_VERSION) { return; }
+      if (sessionStorage.getItem("mini-apps-update-just-v1") === v) { return; }
+      sessionStorage.setItem("mini-apps-update-just-v1", v);
+      var at = "";
+      try { at = String((JSON.parse(localStorage.getItem(UPDATE_BACKUP_KEY) || "null") || {}).at_text || ""); } catch (e) {}
+      var box = document.createElement("div");
+      box.id = "ls-update-done";
+      box.style.cssText = "position:fixed;left:8px;right:8px;bottom:140px;z-index:95;box-sizing:border-box;" +
+        "background:#14261c;color:#dff7e6;border:1px solid #2a4a35;border-radius:12px;padding:9px 10px;" +
+        "display:flex;gap:8px;align-items:center;justify-content:space-between;" +
+        "font:12.5px/1.5 -apple-system,'Microsoft YaHei',sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.4)";
+      var t = document.createElement("div");
+      t.id = "ls-update-done-text";
+      t.style.cssText = "flex:1 1 auto;min-width:0;overflow-wrap:anywhere";
+      t.textContent = "已更新到 v" + v + "\u3000数据已保留" + (at ? "（备份时间 " + at + "）" : "");
+      var x = document.createElement("button");
+      x.id = "ls-update-done-x";
+      x.type = "button";
+      x.textContent = "知道了";
+      x.style.cssText = "flex:0 0 auto;padding:6px 10px;border-radius:8px;border:1px solid #2a4a35;background:#1b2f24;color:#cfd8e3;cursor:pointer";
+      box.appendChild(t); box.appendChild(x);
+      document.body.appendChild(box);
+      x.addEventListener("click", function () { try { box.remove(); } catch (e) {} });
+      setTimeout(function () { try { box.remove(); } catch (e) {} }, 12000);
+    } catch (e) {}
+  }
+  /* 拉服务端最新版本；manual=true 时忽略「以后再说」，并给出「已是最新 vX」反馈 */
+  function verCheck(manual) {
+    var c = verPageSelf(), base = verBase();
+    var dbg = { t: verNow(), manual: !!manual, base: base, mine: c.version, muted: null, result: "", version: "" };
+    try { (window.__lsVerDbg = window.__lsVerDbg || []).push(dbg); } catch (e) {}
+    function done(t) { verWidget("panel", t); verWidget("banner", t); }
+    if (!base) {
+      dbg.result = "no-base";
+      done("离线打开（file://），跳过版本检测");
+      return Promise.resolve(null);
+    }
+    if (!manual && verMute()) {
+      dbg.result = "muted";
+      return Promise.resolve(null);
+    }
+    if (verAsked === 1 && !manual) {
+      dbg.result = "dup";
+      return Promise.resolve(null);
+    }
+    verAsked = 1;
+    dbg.result = "fetching";
+    var url = base + "/api/version?page=" + encodeURIComponent(c.id) +
+              "&v=" + encodeURIComponent(c.version) + "&t=" + verNow();
+    return fetch(url, { cache: "no-store" }).then(function (r) {
+      if (!r || !r.ok) { throw new Error("HTTP " + ((r && r.status) || 0)); }
+      return r.json();
+    }).then(function (j) {
+      if (!j || !j.ok || !j.version) { throw new Error("bad response"); }
+      verServer = j;
+      dbg.version = j.version;
+      if (j.version !== c.version) {
+        verShowBanner(j);
+        dbg.result = "new-version";
+        if (manual) { done("发现新版本 v" + j.version + "（当前 v" + c.version + "）"); }
+      } else {
+        verHideBanner();
+        verAsked = 0;                   /* 没有新版本 → 允许下次自动检测再看一眼 */
+        dbg.result = "up-to-date";
+        if (manual) { done("已是最新版本 v" + c.version); }
+      }
+      return j;
+    })["catch"](function (e) {
+      dbg.result = "error:" + ((e && e.message) || e);
+      verAsked = 0;
+      if (manual) { done("版本检测失败（" + ((e && e.message) || e) + "），不影响使用"); }
+      return null;
+    });
+  }
+  function verCheckNow() {
+    verAsked = 0;                       /* 手动：忽略本轮去重标记（以及下面的 24 小时门槛） */
+    return verCheck(true);
+  }
+  function verBoot() {
+    verToastDone();
+    setTimeout(function () { verCheck(false); }, 3000);
+    try {
+      verTimer = setInterval(function () { verCheck(false); }, 10 * 60 * 1000);
+    } catch (e) {}
+    try {
+      document.addEventListener("visibilitychange", function () {
+        if (!document.hidden) { verCheck(false); }
+      });
+    } catch (e) {}
+    /* 面板里的「检查更新」按钮：委托监听，按钮后加也生效，且不冒泡去关掉面板 */
+    try {
+      document.addEventListener("click", function (e) {
+        var el = e.target;
+        try {
+          while (el && el !== document) {
+            if (el.id === "ls-update-check") {
+              e.stopPropagation();
+              e.preventDefault();
+              verCheckNow();
+              return;
+            }
+            el = el.parentNode;
+          }
+        } catch (e2) {}
+      }, true);
+    } catch (e) {}
+  }
+  try { window.__lsNasVer = { check: verCheck, now: verCheckNow, show: verShowBanner, hide: verHideBanner,
+                              update: verUpdate, backup: verBackupNow, toast: verToastDone,
+                              server: function () { return verServer; }, base: verBase,
+                              page: PAGE_ID, version: PAGE_VERSION,
+                              keys: { backup: UPDATE_BACKUP_KEY, ignore: UPDATE_IGNORE_KEY } }; } catch (e) {}
+  if (document.readyState === "loading") { document.addEventListener("DOMContentLoaded", verBoot); }
+  else { verBoot(); }
+})();
   function storageAlert(msg) {
 
     try {
@@ -3678,7 +3979,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
         v = document.createElement("div");
         v.id = "ls-version";
         v.style.cssText = "margin-top:10px;padding-top:8px;border-top:1px solid #2a3040;font-size:11px;color:#8b94a6;text-align:center;line-height:1.6";
-        v.textContent = "版本 2026-10-12a · 含 NAS 同步";
+        v.textContent = "版本 2026-10-14c · 含 NAS 同步";
       }
       if (v.parentNode !== p || p.lastElementChild !== v) { p.appendChild(v); }
       return v;
@@ -3788,6 +4089,14 @@ html, body { max-width: 100%; overflow-x: hidden; }
     }
     panel.appendChild(btn("导出备份", function () { exportBackup(); }, "ls-export"));
     panel.appendChild(btn("导入恢复", function () { file.click(); }, "ls-import"));
+    /* 版本检测：面板里的「检查更新」（面板里的结果行由 verWidget("panel", …) 填） */
+    panel.appendChild(btn("检查更新", function () { try { if (window.__lsNasVer) { window.__lsNasVer.now(); } } catch (e) {} }, "ls-update-check"));
+    (function () {
+      var up = document.createElement("div");
+      up.id = "ls-update-panel-msg";
+      up.style.cssText = "display:none;font-size:11.5px;color:#9fd0ff;margin:6px 2px 0;line-height:1.7;overflow-wrap:anywhere";
+      panel.appendChild(up);
+    })();
     panel.appendChild(btn("使用说明", function () { showHelp(); }, "ls-help"));
     moveVersionLast();   /* 收尾：版本行永远在最后一项 */
     wrap.appendChild(toggle);
