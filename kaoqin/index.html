@@ -447,15 +447,9 @@ nav a.active svg{transform:translateY(-1px);}
 .sum-row .ss2{flex:none; width:52px; text-align:right; font-size:11px; color:var(--faint);}
 .sum-row.filled .ss2{color:var(--brand-deep);}
 .sum-row.total{font-weight:800; color:var(--brand-deep);}
-.wage-year{margin-top:12px; border-top:1px dashed var(--line); padding-top:10px;}
-.wy-btn{width:100%; display:flex; align-items:center; gap:8px; border:1px solid var(--line); background:var(--brand-faint); color:var(--brand-deep); border-radius:11px; padding:10px 12px; font-size:13.5px; font-weight:700; cursor:pointer; min-height:44px; text-align:left;}
-.wy-btn:active{background:var(--brand-soft);}
-.wy-btn .wy-sub{font-size:11.5px; font-weight:600; color:var(--muted);}
-.wy-btn .wy-arrow{margin-left:auto; font-size:11.5px; font-weight:600; color:var(--faint);}
-.wage-ylist{margin-top:8px;}
-.wage-trow{display:grid; grid-template-columns:46px 1fr 1fr 1.15fr 1fr; gap:5px; align-items:center; padding:6px 3px; border-bottom:1px dashed var(--line-soft); font-size:12px; cursor:pointer; min-width:0;}
+.wage-year{margin-top:2px;}
+.wage-trow{display:grid; grid-template-columns:46px 1fr 1fr 1.15fr 1fr; gap:5px; align-items:center; padding:6px 3px; border-bottom:1px dashed var(--line-soft); font-size:12px; min-width:0;}
 .wage-trow:last-of-type{border-bottom:none;}
-.wage-trow:hover{background:var(--brand-faint);}
 .wage-trow .tm{color:var(--muted); font-weight:700; font-variant-numeric:tabular-nums; white-space:nowrap;}
 .wage-trow .tm .th{font-style:normal; font-size:10px; color:var(--fang); margin-left:2px;}
 .wage-trow .t1,.wage-trow .t2,.wage-trow .t3{text-align:right; font-variant-numeric:tabular-nums; overflow-wrap:anywhere;}
@@ -465,10 +459,8 @@ nav a.active svg{transform:translateY(-1px);}
 .wage-trow .t3.diff-zero{color:var(--faint);}
 .wage-trow .t4{color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 .wage-thead{cursor:default; font-size:11px; color:var(--faint); border-bottom:1px solid var(--line-soft);}
-.wage-thead:hover{background:transparent;}
 .wage-thead .t1,.wage-thead .t2,.wage-thead .t3{font-weight:700;}
-.wage-tfoot{cursor:default; margin-top:2px; border-top:1.5px solid var(--line); border-bottom:none; font-weight:800; color:var(--brand-deep); font-size:12.5px;}
-.wage-tfoot:hover{background:transparent;}
+.wage-tfoot{margin-top:2px; border-top:1.5px solid var(--line); border-bottom:none; font-weight:800; color:var(--brand-deep); font-size:12.5px;}
 .wage-tfoot .t4{color:var(--brand-deep); font-weight:700; font-size:11px;}
 /* ==== KQ-WAGE-CSS-END ==== */
 .foot{text-align:center; font-size:11.5px; color:var(--faint); padding:8px 14px 6px; line-height:1.7;}
@@ -546,7 +538,7 @@ nav a.active svg{transform:translateY(-1px);}
 (function () {
   var KEY = "kaoqin_local_cloud_v1";     /* 本机存储：{v:2, items:{"<uid>":{d,t}}} */
   var KQ_APP = "kaoqin";                 /* 服务端槽位 */
-  var KQ_VER = "版本 2026-10-14a · 含 NAS 同步";   /* 只在 NAS 面板里显示；界面左下角不再显示版本 */
+  var KQ_VER = "版本 2026-10-14b · 含 NAS 同步";   /* 只在 NAS 面板里显示；界面左下角不再显示版本 */
   var realFetch = window.fetch ? window.fetch.bind(window) : null;
 
   /* ---------- 本机存储（按 uid 分开，每个 uid 一份 {d,t}） ---------- */
@@ -1827,7 +1819,7 @@ nav a.active svg{transform:translateY(-1px);}
   if (document.readyState === "loading") { document.addEventListener("DOMContentLoaded", boot); }
   else { boot(); }
 })();
-</script><!-- kq-ver 2026-10-14a -->
+</script><!-- kq-ver 2026-10-14b -->
 <script>
 "use strict";
 /* ============================================================
@@ -2154,7 +2146,7 @@ function num(v){ return (typeof v==="number" && isFinite(v)) ? v : null; }
 function r2(v){ return Math.round(v*100)/100; }
 /* ==== KQ-WAGE-CHECK-BEGIN ==== */
 /* ============================================================
- * 工资核对（预发 / 实发 / 差额 / 备注） + 收益汇总 + 全年逐月一览
+ * 工资核对（预发 / 实发 / 差额 / 备注） + 收益汇总 + 全年逐月明细（年度页）
  * ------------------------------------------------------------
  * 预发 = 页面自己按新规则算出的「工资总计」原值（直接复用 calcFromStart 的结果，
  *        这里只取数，不另写一套规则）；实发 = 用户自己填，按月存进账本
@@ -2323,12 +2315,12 @@ function renderMonthWageCheck(){
           'oninput="onWageNoteInput(this)"></div>' +
       '<div class="hint">预发直接取本页「工资总计（新规则）」；实发与备注按月存进账本（跟着同步走、可导出导入）。' +
         (expect!=null ? '本月日薪 ' + money2(r.daily) + ' · 时薪 ' + money2(r.hourly) + '。' : '') +
-        '没填实发时只提示「请填实发工资」，不算差额。</div>' +
-    '</div>' +
-    renderYearWageTable(pid, y) + '</div>';
+        '没填实发时只提示「请填实发工资」，不算差额。' +
+        '逐月明细（每月预发 / 实发 / 差额 / 备注 + 合计）在「年度」页的收益汇总里看。</div>' +
+    '</div></div>';
 }
 
-/* ---------- 全年逐月一览（可折叠；12 行，点行跳到那个月） ----------
+/* ---------- 全年逐月明细（**只在年度页**；12 行 + 合计行，不折叠） ----------
  * 差额列与月度页「工资核对」卡同源：都用 wageDiff(预发, 实发)。 */
 function renderYearWageTable(pid, y){
   var A = payActualOf(pid);
@@ -2345,7 +2337,7 @@ function renderYearWageTable(pid, y){
     var nt = payNoteBy(pid, k);
     if (nt.length > 12) nt = nt.slice(0, 12) + "…";
     rows += '<div class="wage-trow' + (hasA ? " filled" : " not-filled") + '" data-month="' + m +
-      '" data-diff="' + (d.ok ? d.diff : "") + '" onclick="jumpMonth(' + m + ')">' +
+      '" data-diff="' + (d.ok ? d.diff : "") + '">' +
       '<span class="tm">' + m + '月' + (m<=6 ? '<i class="th">上</i>' : '') + '</span>' +
       '<span class="t1">' + money2(expect) + '</span>' +
       '<span class="t2' + (hasA ? "" : " not-filled") + '">' + (hasA ? money2(Number(av)) : "—（未填实发）") + '</span>' +
@@ -2356,28 +2348,15 @@ function renderYearWageTable(pid, y){
   var totE = money2(anyE ? r2(sumE) : null);
   var totA = money2(filledN ? r2(sumA) : null);
   return '<div class="wage-year">' +
-    '<button class="wy-btn" onclick="toggleIncOpen(\'wy\')">全年逐月一览' +
-      '<span class="wy-sub">已填 ' + filledN + '/12 个月</span>' +
-      '<span class="wy-arrow">展开 / 收起</span></button>' +
-    '<div class="wage-ylist" id="incs-wy" style="display:' + (INC_OPEN["wy"] ? "block" : "none") + '">' +
-      '<div class="wage-trow wage-thead"><span class="tm">月</span><span class="t1">预发</span>' +
-        '<span class="t2">实发</span><span class="t3">差额</span><span class="t4">备注</span></div>' + rows +
-      '<div class="wage-trow wage-tfoot" data-total="1"><span class="tm">合计</span>' +
-        '<span class="t1">' + totE + '</span><span class="t2">' + totA + '</span>' +
-        '<span class="t3 ' + diffClsOf(ds.year) + '">' + diffTextOf(ds.year) + '</span>' +
-        '<span class="t4">' + (filledN ? ('已填 ' + filledN + ' 个月') : '还没填实发') + '</span></div>' +
-      '<div class="hint">差额 = 该月预发 − 该月实发（正数红字 = 实发少了，负数绿字 = 实发多了，0 = 一致）；' +
-        '没填实发的月份显示 — 并标注「未填实发」。合计行 = 12 个月的预发合计 / 实发合计 / 差额合计' +
-        '（实发与差额只累加已填的月份）。点任意一行跳到那个月去填 / 改。</div>' +
-    '</div></div>';
-}
-/* 跳到指定月份（跨年也安全；按月独立保存，不互相影响） */
-function jumpMonth(m){
-  if (!(m >= 1 && m <= 12)) return;
-  state.month = m;
-  location.hash = "#/month";
-  renderPersonSwitch();
-  render();
+    '<div class="wage-trow wage-thead"><span class="tm">月</span><span class="t1">预发</span>' +
+      '<span class="t2">实发</span><span class="t3">差额</span><span class="t4">备注</span></div>' + rows +
+    '<div class="wage-trow wage-tfoot" data-total="1"><span class="tm">合计</span>' +
+      '<span class="t1">' + totE + '</span><span class="t2">' + totA + '</span>' +
+      '<span class="t3 ' + diffClsOf(ds.year) + '">' + diffTextOf(ds.year) + '</span>' +
+      '<span class="t4">' + (filledN ? ('已填 ' + filledN + ' 个月') : '还没填实发') + '</span></div>' +
+    '<div class="hint">差额 = 该月预发 − 该月实发（正数红字 = 实发少了，负数绿字 = 实发多了，0 = 一致）；' +
+      '没填实发的月份显示 — 并标注「未填实发」。合计行 = 12 个月的预发合计 / 实发合计 / 差额合计' +
+      '（实发与差额只累加已填的月份）。</div></div>';
 }
 var _wageTimer = null;
 function onWageActualInput(){
@@ -2428,6 +2407,10 @@ function incomeSumWrapper(){
   var pid = state.person, y = state.year;
   var A = payActualOf(pid);
   return '<div class="card"><h3>收益汇总</h3>' + incomeSummaryCard(pid, y, A, "y") + '</div>';
+}
+/* 全年逐月明细卡（只在年度页） */
+function yearWageTableCard(pid, y){
+  return '<div class="card"><h3>逐月明细（预发 / 实发 / 差额 / 备注）</h3>' + renderYearWageTable(pid, y) + '</div>';
 }
 /* 差额文案：正数红字「实发少了 ￥X」/ 负数绿字「实发多了 ￥X」/ 0 灰字「一致」 */
 function diffTextOf(d){
@@ -3210,6 +3193,7 @@ function renderYear(){
     '</div>'+
 /* KQ-WAGE-YEAR-BEGIN */
     incomeSumWrapper()+
+    yearWageTableCard(pid, y)+
 /* KQ-WAGE-YEAR-END */
     '<div class="card"><h3>月度工资总计</h3><div class="bars">'+bars+'</div>'+
       '<div class="hint">工资为新规则计算结果（无考勤月份按源表预填）。</div>'+
