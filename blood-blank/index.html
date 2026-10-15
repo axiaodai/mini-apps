@@ -1459,6 +1459,9 @@ html, body { max-width: 100%; overflow-x: hidden; }
                      inviteEnabled: nasCheckInvite, registerEntry: nasPaintRegisterEntry,
                      registerNameErr: nasRegNameErr,
                      tomb: { all: tombAll, add: tombAdd, save: tombSave, key: tombKey, merge: tombMerge, itemsOf: tombItemsOf, absorb: tombAbsorb, user: tombUser } };
+  window.__lsNas.expired = function () { return !!NAS_STATE.expired; };
+  window.__lsNas.markExpired = nasMarkExpired;
+  window.__lsNas.reconnect = nasReconnect;
   window.__lsSync = { make: syncMakeSync, encode: syncEncode, decode: syncDecode, apply: syncApply, show: showSync };
   window.__lsMirror = { set: safeSet, get: safeGet, restore: mirrorRestore, test: storageSelfTest, cookie: cookieParts };
 
@@ -2017,7 +2020,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
   /* ---- NAS 同步（多设备互通编辑）---- */
   var NAS_KEY = "mini-apps-nas-v1";
   var NAS_KINDS = ["blood", "running", "redeem", "intervals", "tomb"];
-  var NAS_STATE = { busy: false, lastMsg: "", pending: false, lastSync: 0, tombSlot: null };
+  var NAS_STATE = { busy: false, lastMsg: "", pending: false, lastSync: 0, tombSlot: null, expired: false, expiredWhy: "" };
 
   function nasCfg() {
     try { return JSON.parse(safeGet(NAS_KEY) || "null"); } catch (e) { return null; }
@@ -2363,7 +2366,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
     /* 服务器还没开通独立的 tomb 槽 → 安静跳过（墓碑随献血/跑步槽一起同步，不影响其它 kind） */
     if (kind === "tomb" && NAS_STATE.tombSlot === false) { return Promise.resolve({ kind: kind, ok: true, skipped: true }); }
     return nasReq("GET", "/api/one?user=" + encodeURIComponent(user) + "&app=" + kind).then(function (g) {
-      if (g.status === 401) { throw new Error("登录已过期，请重新连接"); }
+      if (g.status === 401) { nasMarkExpired(true, "GET /api/one"); throw new Error("登录已过期，请重新连接"); }
       if (kind === "tomb" && (g.status === 400 || g.status === 404 || g.status === 405)) {
         NAS_STATE.tombSlot = false;
         return { kind: kind, ok: true, skipped: true, msg: "该服务器暂无独立 tomb 槽（墓碑随记录槽同步）" };
@@ -2505,10 +2508,103 @@ html, body { max-width: 100%; overflow-x: hidden; }
   });
 
   /* ---- 状态显示 ---- */
+  /* ==__LS_EXPIRY_MARK== NAS 令牌过期（401）的提示与一键重连 ------------------
+     只做提示与重登，不碰数据 / 合并逻辑。口令不落盘 → 必须现填，所以重连按钮会把它高亮聚焦。 */
+  function nasMarkExpired(on, why) {
+    NAS_STATE.expired = !!on;
+    NAS_STATE.expiredWhy = on ? String(why || "") : "";
+    try { nasPaintAlert(); } catch (e) {}
+    try { nasPaintStatus(); } catch (e) {}
+    try { nasPaintExpiryBar(); } catch (e) {}
+  }
+  /* ☰ 里的 ⇅ 圆按钮上加一颗红点：不打开面板也看得见"要重新登录了" */
+  function nasPaintAlert() {
+    try {
+      var host = null;
+      var all = document.querySelectorAll("button");
+      for (var i = 0; i < all.length; i++) {
+        if (all[i].id && all[i].id.indexOf("nas") >= 0) { host = all[i]; break; }
+      }
+      if (!host && typeof __lsNasToggle === "object" && __lsNasToggle && __lsNasToggle.node) { host = __lsNasToggle.node; }
+      if (!host || !host.parentNode) { return; }
+      var dot = document.getElementById("ls-nas-alert");
+      if (!NAS_STATE.expired) { if (dot && dot.parentNode) { dot.parentNode.removeChild(dot); } return; }
+      if (!dot) {
+        dot = document.createElement("span");
+        dot.id = "ls-nas-alert";
+        dot.title = "登录已过期，请重新连接";
+        dot.style.cssText = "position:absolute;top:-3px;right:-3px;width:11px;height:11px;border-radius:50%;" +
+          "background:#e5484d;border:2px solid #12151c;box-sizing:content-box";
+        if (getComputedStyle(host).position === "static") { host.style.position = "relative"; }
+        host.appendChild(dot);
+      }
+    } catch (e) {}
+  }
+  /* 面板里的红色提示条：显示状态，重连按钮也在里面 */
+  function nasPaintExpiryBar() {
+    try {
+      var bar = document.getElementById("ls-nas-expired");
+      var btn = document.getElementById("ls-nas-reconnect");
+      if (!bar || !btn) { return; }
+      var on = !!NAS_STATE.expired;
+      bar.style.display = on ? "block" : "none";
+      btn.style.display = on ? "block" : "none";
+      if (on) { bar.textContent = "登录已过期，请重新连接"; }
+    } catch (e) {}
+  }
+  /* 一键重连：地址 + 已保存的使用者名字 + 口令栏（必填，口令不落盘） */
+  function nasReconnect() {
+    var c = nasCfg() || {};
+    var urlEl = document.getElementById("ls-nas-url");
+    var userEl = document.getElementById("ls-nas-user");
+    var passEl = document.getElementById("ls-nas-pass");
+    var url = String((urlEl && urlEl.value) || c.url || "").trim();
+    var user = String((userEl && userEl.value) || c.user || currentUser() || "").trim();
+    var pass = passEl ? passEl.value : "";
+    function say(t, okk) {
+      try {
+        var el = document.getElementById("ls-nas-msg");
+        if (el) { el.style.color = okk ? "#8fe3a8" : "#ffb4b4"; el.textContent = t; }
+        if (typeof nasToast === "function") { nasToast(t, !!okk); }
+      } catch (e) {}
+    }
+    if (!url || !user) { say("请先把服务器地址和使用者名字填上"); return Promise.resolve({ ok: false }); }
+    if (!pass) {
+      /* 口令不保存（安全约定）→ 引导用户填这一栏，而不是干说"请重新连接" */
+      if (passEl) {
+        passEl.style.borderColor = "#e5484d";
+        passEl.style.boxShadow = "0 0 0 2px rgba(229,72,77,.35)";
+        try { passEl.focus(); } catch (e) {}
+      }
+      say("请先在「口令」栏填一次你的登录口令，再点「重新连接」（口令不会保存在本机）");
+      return Promise.resolve({ ok: false, needPass: true });
+    }
+    if (passEl) { passEl.style.borderColor = ""; passEl.style.boxShadow = ""; }
+    say("正在重新连接…", true);
+    return nasLogin(url, user, pass).then(function (j) {
+      nasMarkExpired(false);
+      if (passEl) { passEl.value = ""; }
+      say("已重新连接" + (j && j.user ? "（" + j.user + "）" : "") + "，正在同步…", true);
+      return nasSync("重新连接后");
+    }).then(function (r) {
+      var good = !!(r && r.ok);
+      say(good ? "已重新连接并同步完成" : ("重新连接成功，但同步失败：" + ((r && r.msg) || "未知")), good);
+      return { ok: good };
+    }).catch(function (e) {
+      var m = nasHint(e);
+      say("重新连接失败：" + m);
+      return { ok: false, error: m };
+    });
+  }
   function nasPaintStatus() {
     var el = document.getElementById("ls-nas-status");
     if (!el) { return; }
     var c = nasCfg();
+    if (NAS_STATE.expired) {
+      el.textContent = "⚠️ 登录已过期，请重新连接（点这里打开面板 → 填一次口令 →「重新连接」）";
+      el.style.color = "#ff8b8b";
+      return;
+    }
     if (!c || !c.token) { el.textContent = "未连接"; el.style.color = "#9aa3b2"; return; }
     var t = NAS_STATE.lastSync ? new Date(NAS_STATE.lastSync) : (c.lastSync ? new Date(c.lastSync) : null);
     var when = t ? (t.getMonth() + 1 + "月" + t.getDate() + "日 " + ("0" + t.getHours()).slice(-2) + ":" + ("0" + t.getMinutes()).slice(-2)) : "尚未同步";
@@ -2545,6 +2641,10 @@ html, body { max-width: 100%; overflow-x: hidden; }
       "<div style='font-size:16px;font-weight:600'>NAS 同步（多设备）</div>" +
       "<button id='ls-nas-x' style='background:none;border:none;color:#9aa3b2;font-size:22px;cursor:pointer'>×</button></div>" +
       "<div id='ls-nas-status' style='font-size:12.5px;margin-bottom:10px'></div>" +
+      "<div id='ls-nas-expired' style='display:none;background:#3a1518;border:1px solid #7a2a2a;"
+        + "border-radius:10px;padding:9px 10px;margin:0 0 8px;color:#ffb4b4;font-size:12.5px;line-height:1.6'></div>" +
+      "<button id='ls-nas-reconnect' style='display:none;width:100%;padding:11px;border-radius:10px;border:none;"
+        + "background:#b3261e;color:#fff;font-weight:700;cursor:pointer;margin:0 0 10px'>重新连接（用已保存的使用者名字）</button>" +
       "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>服务器地址（飞牛 NAS，带端口）</div>" +
       inp("ls-nas-url", urlVal, "http://你的NAS地址:8080") +
       "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>使用者名字（要和页面里的使用者一致）</div>" +
@@ -2601,6 +2701,8 @@ html, body { max-width: 100%; overflow-x: hidden; }
       }
     })();
 
+    document.getElementById("ls-nas-reconnect").addEventListener("click", function () { nasReconnect(); });
+    nasPaintExpiryBar();
     document.getElementById("ls-nas-connect").addEventListener("click", function () {
       var url = document.getElementById("ls-nas-url").value.trim();
       var user = document.getElementById("ls-nas-user").value.trim();
@@ -2609,6 +2711,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
       msg("连接中…");
       nasLogin(url, user, pass).then(function (j) {
         msg("登录成功，正在同步…", true);
+        nasMarkExpired(false);
         nasPaintStatus();
         return nasSync("连接后");
       }).then(function (r) {
@@ -2777,7 +2880,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
            `var` 落到全局会和页面自己的变量撞名（PAGE_VERSION 之类）。              */
 (function () {
   var PAGE_ID = "blood-blank";           /* 版本检测：本页在 /api/version 里的标识（注入时替换） */
-  var PAGE_VERSION = "2026-10-14c";      /* 构建期写死的「本页版本」；与服务端解析结果比 */
+  var PAGE_VERSION = "2026-10-15a";      /* 构建期写死的「本页版本」；与服务端解析结果比 */
   var UPDATE_BACKUP_KEY = "mini-apps-update-backup-v1";
   var UPDATE_TRACE_KEY = "mini-apps-update-trace-v1";   /* 只给自动化测试看：更新路径里的 setItem 键名 */
   var UPDATE_IGNORE_KEY = "mini-apps-update-ignore-v1";
@@ -3942,7 +4045,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
             '这个名字会显示在菜单按钮上，别人一眼就能看到；也不是账号，只用于区分不同人。' +
             '不连 NAS 时，本工具所有数据都保存在你自己的浏览器里，不会上传到任何服务器。</div>';
 
-    /* ---- 版本检测与一键更新（2026-10-14c 新增；三页同一份实现，考勤页没有说明入口）---- */
+    /* ---- 版本检测与一键更新（2026-10-15a 新增；三页同一份实现，考勤页没有说明入口）---- */
     html += '<div style="' + H + '">' + NUM[base + 4] + '、版本检测与一键更新（有新版本时会提示）</div>';
     html += '<div style="' + NOTE + '">打开页面约 <b>3 秒</b>后自动看一眼有没有新版本；之后<b>每 10 分钟</b>再看一次，' +
             '回到前台也会看一次。<b>更不更新完全由你决定</b>——不点「立即更新」就永远不会换版本。</div>';
@@ -3998,7 +4101,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
         v = document.createElement("div");
         v.id = "ls-version";
         v.style.cssText = "margin-top:10px;padding-top:8px;border-top:1px solid #2a3040;font-size:11px;color:#8b94a6;text-align:center;line-height:1.6";
-        v.textContent = "版本 2026-10-14c · 含 NAS 同步";
+        v.textContent = "版本 2026-10-15a · 含 NAS 同步";
       }
       if (v.parentNode !== p || p.lastElementChild !== v) { p.appendChild(v); }
       return v;
