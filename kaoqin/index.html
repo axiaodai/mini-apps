@@ -538,7 +538,7 @@ nav a.active svg{transform:translateY(-1px);}
 (function () {
   var KEY = "kaoqin_local_cloud_v1";     /* 本机存储：{v:2, items:{"<uid>":{d,t}}} */
   var KQ_APP = "kaoqin";                 /* 服务端槽位 */
-  var KQ_VER = "版本 2026-10-14c · 含 NAS 同步";   /* 只在 NAS 面板里显示；界面左下角不再显示版本 */
+  var KQ_VER = "版本 2026-10-15a · 含 NAS 同步";   /* 只在 NAS 面板里显示；界面左下角不再显示版本 */
   var realFetch = window.fetch ? window.fetch.bind(window) : null;
 
   /* ---------- 本机存储（按 uid 分开，每个 uid 一份 {d,t}） ---------- */
@@ -564,6 +564,58 @@ nav a.active svg{transform:translateY(-1px);}
   function kqWrite(store) {
     try { localStorage.setItem(KEY, JSON.stringify({ v: 2, items: (store && store.items) || {} })); return true; }
     catch (e) { return false; }
+  }
+
+  /* ---------- 同步基线（判「本机有没有未上传的改动」用） ----------
+     SYNC_KEY 按 uid 记住「上一次同步成功后双方一致的账本内容」，用来区分两种情况：
+       · 页面自动保存把 t 刷成当前时间、内容没变 → 不是新改动，服务器可以放心覆盖本机；
+       · 真的改了账本内容 → 是本机未上传的改动，先保留 + 推送，绝不静默丢。
+     关键：t（时间戳）不参与比较。老实现拿「服务器 t 是否大于本机 t」当门槛，而 t 每次保存
+     都会被刷新，于是服务器哪怕刚被另一台设备写了新数据，也会被判成「不比本机新」而跳过拉取 ——
+     这就是「手机记完电脑不同步」的根因。 */
+  var SYNC_KEY = "kaoqin_nas_sync_v1";    /* {items:{"<uid>":{sig,len}}} */
+  function lsRead(key) {
+    try { return JSON.parse(localStorage.getItem(key) || "null"); } catch (e) { return null; }
+  }
+  function lsWrite(key, obj) {
+    try { localStorage.setItem(key, JSON.stringify(obj || {})); return true; } catch (e) { return false; }
+  }
+  function kqD(rec) {                    /* 账本内容本体（不含 t 等元数据） */
+    var d = (rec && rec.d !== undefined) ? rec.d : rec;
+    if (!d || typeof d !== "object") { return {}; }
+    var out = {}, k;
+    for (k in d) {
+      if (!Object.prototype.hasOwnProperty.call(d, k) || k === "ts" || k === "t") { continue; }
+      out[k] = d[k];
+    }
+    return out;
+  }
+  function kqItemsOf(d) {
+    return (d && typeof d === "object" && d.items && typeof d.items === "object") ? d.items : null;
+  }
+  function kqSig(rec) { return kqCanon(kqD(rec)); }
+  /* 该 uid 上一次同步成功（拉回或推上去）时的内容指纹 */
+  function kqBase(uid) {
+    var all = lsRead(SYNC_KEY), r = all && all.items ? all.items[uid] : null;
+    return (r && typeof r.sig === "string") ? r.sig : null;
+  }
+  function kqSetBase(uid, sig) {
+    if (!uid) { return; }
+    var all = lsRead(SYNC_KEY);
+    if (!all || typeof all !== "object") { all = {}; }
+    if (!all.items || typeof all.items !== "object") { all.items = {}; }
+    all.items[uid] = { sig: sig, at: Date.now() };
+    lsWrite(SYNC_KEY, all);
+  }
+  function kqBaseNone(uid) {           /* 覆盖本机时清掉基线：下次同步一律重新以服务器为准 */
+    var all = lsRead(SYNC_KEY);
+    if (all && all.items && all.items[uid]) { delete all.items[uid]; lsWrite(SYNC_KEY, all); }
+  }
+  /* 本机是否有「服务器还没收下」的改动：内容指纹 ≠ 上次同步成功的指纹 */
+  function kqIsPending(uid) {
+    var rec = kqRead().items[uid];
+    if (!rec) { return false; }
+    return kqSig(rec) !== kqBase(uid);
   }
   function kqUid() {
     try {
@@ -605,9 +657,15 @@ nav a.active svg{transform:translateY(-1px);}
     var method = ((init.method || "GET") + "").toUpperCase();
     if (path === "/userdata" && method === "GET") {
       var uid = qs(url, "uid");
-      var db = kqRead(), rec = db.items[uid];
-      if (!rec) { return reply({ ok: false, error: "no data for this uid" }); }
-      return reply({ ok: true, data: rec.d });
+      /* 打开/刷新页面时页面第一件事就是读这里。**先真拉一次服务器（合并 + 必要时上传），
+         再回话**，这样页面拿到的永远是最新账本 —— 这才是「另一台设备刚记完，本机刷新就能看到」。
+         老实现直接回本机存储：本机那份可能很旧，而页面当时只在「服务器 ts 更大」时才采用，
+         于是永远看不到手机刚记的数据。拉取失败（离线）时退回本机，页面照旧可用。 */
+      return kqWaitPull("打开页面").then(function () {
+        var db = kqRead(), rec = db.items[uid];
+        if (!rec) { return reply({ ok: false, error: "no data for this uid" }); }
+        return reply({ ok: true, data: rec.d, pending: kqIsPending(uid) });
+      });
     }
     if (path === "/save" && method === "POST") {
       var body = null;
@@ -617,15 +675,22 @@ nav a.active svg{transform:translateY(-1px);}
       var store = kqRead();
       store.items[bUid] = { d: body, t: Number(body.ts) || Date.now() };
       kqWrite(store);
+      /* 页面每次保存都会带一个新的 ts（内容可能完全没变），所以这里**不能**把基线当成
+         「服务器已收下这份」。基线只由两个地方决定：拉取时服务器那份（kqMergeInto），
+         以及上传成功后本机这份（nasSyncKind 的 PUT 回调）。
+         含义：只要是本机写的，就当作「可能未上传」→ 由 kqSchedulePush 推送一次（内容一样也没关系，
+         服务器按同一份内容重写 t，不丢任何数据）；绝不会因为「本机 t 被刷高了」就误判成
+         「服务器不比本机新」而跳过拉取。 */
       kqSchedulePush();                  /* 写完本机 → 3 秒去抖推送一次 */
-      return reply({ ok: true, ts: body.ts || null, local: true });
+      return reply({ ok: true, ts: body.ts || null, local: true, pending: kqIsPending(bUid) });
     }
     return reply({ ok: false, error: "unsupported" }, 405);
   };
 
   /* ---------- NAS 同步（多设备互通，独立槽位 kaoqin） ---------- */
   var NAS_KEY = "mini-apps-nas-v1";      /* 与献血/跑步页共用：那边连过这里就是已连接 */
-  var KQ_STATE = { busy: false, lastMsg: "", pending: false, lastSync: 0, lastErr: "" };
+  var KQ_STATE = { busy: false, lastMsg: "", pending: false, lastSync: 0, lastErr: "",
+                   expired: false, expiredWhy: "" };   /* expired: 令牌过期（401），面板要醒目提示 + 一键重连 */
 
   function nasCfg() {
     try { return JSON.parse(localStorage.getItem(NAS_KEY) || "null"); } catch (e) { return null; }
@@ -879,8 +944,56 @@ nav a.active svg{transform:translateY(-1px);}
     });
   }
 
-  /* 拉取合并：每个 uid 比 ts，大者胜（相同保留本机）；返回真正被改动（新增或更新）的份数 */
+  /* 拉取合并：**按内容比较，不按时间戳门槛**（2026-10-15a 真修复）。
+     服务器账本是权威副本，所以：
+       · 本机没有该 uid / 两边内容一致 → 无需动作（一致时只把 t 对齐服务器，避免无谓回推）；
+       · 本机改过（指纹 ≠ 上次同步成功时的指纹）：
+           - 本机 t >= 服务器 t → **保留本机**（未上传的改动优先，稍后推送，绝不静默丢）；
+           - 服务器 t 更大    → 采用服务器（别的设备后写的，以服务器为准）；
+       · 本机没改过（只是页面自动保存把 t 刷成了当前时间）→ 一律采用服务器。
+     返回 {pulled, kept}：pulled = 采用服务器版本的份数（需要重绘），kept = 保留并待上传的份数。 */
   function kqMergeInto(remoteItems, store) {
+    var pulled = 0, kept = 0, uid, r, rt, mine, mt, rsig, lsig, kb;
+    for (uid in (remoteItems || {})) {
+      if (!Object.prototype.hasOwnProperty.call(remoteItems, uid)) { continue; }
+      r = remoteItems[uid];
+      if (!r || typeof r !== "object" || r.d === undefined) { continue; }
+      rt = Number(r.t) || 0;
+      rsig = kqSig(r);
+      mine = store.items[uid];
+      if (!mine) { store.items[uid] = { d: r.d, t: rt }; kqSetBase(uid, rsig); pulled++; continue; }
+      lsig = kqSig(mine);
+      mt = Number(mine.t) || 0;
+      kb = kqBase(uid);
+      if (lsig === rsig) {                       /* 内容一致：只对齐时间戳，不算改动、不回推 */
+        if (mt !== rt) { store.items[uid] = { d: mine.d, t: rt }; }
+        kqSetBase(uid, rsig);
+        continue;
+      }
+      /* 本机没改过内容 → 以服务器为准。
+         判定用「基线指纹」（上次同步成功时双方一致的内容）：基线为空表示本机这份
+         从来没和服务器对齐过（新设备/刚清数据），此时本机没有"服务器没见过"的内容可保护。
+         注：不能拿服务器 t 比大小当门槛 —— 页面自动保存会把 t 刷成当前时间，
+         服务器哪怕刚被别的设备写了新数据也会被判成"不比本机新"。 */
+      if (!kb || lsig === kb || !(mt > 0)) {     /* 本机没改过（只是 t 被刷高）→ 以服务器为准 */
+        store.items[uid] = { d: r.d, t: rt };
+        kqSetBase(uid, rsig);
+        pulled++;
+        continue;
+      }
+      /* 本机真的改过内容（未上传）：本机更新就保留并稍后推送；服务器更新才让服务器胜出。
+         用严格 > ：本机刚记的那一刻 t 完全可能等于服务器 t，此时要站在"用户刚记的东西"这一边。 */
+      if (mt > rt) { kept++; continue; }
+      store.items[uid] = { d: r.d, t: rt };
+      kqSetBase(uid, rsig);
+      pulled++;
+    }
+    return { pulled: pulled, kept: kept };
+  }
+  /* 「导入备份文件」专用：仍按老规则 **ts 大者胜**（导入的是文件、不是服务器权威副本，
+     用户明确要拿它覆盖 / 合并进本机）。返回真正被改动（新增或更新）的份数。
+     注意与 kqMergeInto 分开：那条路径是服务器权威 + 保护未上传改动，语义不同。 */
+  function kqMergeByTs(remoteItems, store) {
     var changed = 0, uid, r, rt, mine, mt, cur;
     for (uid in (remoteItems || {})) {
       if (!Object.prototype.hasOwnProperty.call(remoteItems, uid)) { continue; }
@@ -909,22 +1022,45 @@ nav a.active svg{transform:translateY(-1px);}
     round = round || 0;
     if (!nasConfigured()) { return Promise.resolve({ ok: false, msg: "未连接 NAS" }); }
     return nasReq("GET", kqOneUrl(round === 0)).then(function (g) {   /* 第一轮加唯一串破缓存 */
-      if (g.status === 401) { throw new Error("登录已过期，请重新连接"); }
+      if (g.status === 401) { kqMarkExpired(true, "GET /api/one"); throw new Error("登录已过期，请重新连接"); }
       if (!g.ok || !g.body || !g.body.ok) { throw new Error((g.body && g.body.error) || ("读取失败 " + g.status)); }
       var remote = g.body.data, rev = g.body.rev;
-      var remoteItems = (remote && remote.items) ? remote.items : {};
+      var remoteItems = kqItemsOf(remote) || {};
       var store = kqRead();
-      var pulled = kqMergeInto(remoteItems, store);
-      if (pulled) { kqWrite(store); }
-      if (mode === "download") { return { ok: true, rev: rev, pulled: pulled, pushed: false }; }
+      var mg = kqMergeInto(remoteItems, store);
+      if (mg.pulled) { kqWrite(store); }
+      if (mode === "download") { return { ok: true, rev: rev, pulled: mg.pulled, kept: mg.kept, pushed: false }; }
       var mine = kqRead().items;
-      if (kqCanon(remoteItems) === kqCanon(mine)) { return { ok: true, rev: rev, pulled: pulled, pushed: false }; }
+      if (kqCanon(remoteItems) === kqCanon(mine)) { return { ok: true, rev: rev, pulled: mg.pulled, kept: mg.kept, pushed: false }; }
       return nasReq("PUT", kqOneUrl(), { baseRev: rev, data: { v: 1, items: mine } }).then(function (p) {
         if (p.status === 409 && round < 3) { return nasSyncKind(round + 1, mode); }  /* 别人刚改过 → 重取再合并 */
         if (!p.ok || !p.body || !p.body.ok) { throw new Error((p.body && p.body.error) || ("写入失败 " + p.status)); }
-        return { ok: true, rev: p.body.rev, pulled: pulled, pushed: true };
+        var i, u2;
+        for (u2 in mine) {                       /* 上传成功 → 这批内容就是双方一致的基线 */
+          if (Object.prototype.hasOwnProperty.call(mine, u2)) { kqSetBase(u2, kqSig(mine[u2])); }
+        }
+        return { ok: true, rev: p.body.rev, pulled: mg.pulled, kept: mg.kept, pushed: true };
       });
     });
+  }
+  /* 等一次真实同步跑完（页面打开时 /userdata 先等它，保证「一打开就是服务器最新」）。
+     同一时刻只跑一次，其它调用共享同一个 Promise；失败也不让页面请求失败。
+     注：/api/one 的 GET 每次都带唯一串破缓存（kqOneUrl），所以不能用缓存/URL 去重，
+     必须在这里用 __kqPullP 显式合流，否则页面一开就会连打好几次。 */
+  var __kqPullP = null;
+  function kqPullCount() { return __kqBust; }   /* 已经真打出去的 /api/one 请求数（只读，给测试断言用） */
+  function kqSyncOnce(reason) {
+    if (__kqPullP) { return __kqPullP; }
+    if (!nasConfigured()) { return Promise.resolve({ ok: false, msg: "未连接 NAS" }); }
+    __kqPullP = nasSync(reason || "拉取").then(function (r) { __kqPullP = null; return r; },
+      function (e) { __kqPullP = null; throw e; });
+    return __kqPullP;
+  }
+  function kqWaitPull(reason) {
+    if (!nasConfigured()) { return Promise.resolve(); }
+    var p;
+    try { p = kqSyncOnce(reason); } catch (e) { return Promise.resolve(); }
+    return p.then(function () {}, function () {});   /* 连不上服务器也不能让 /userdata 失败 */
   }
   /* 页面数据刷新：优先调用页面自己的刷新函数，没有就整页重载一次（防死循环） */
   function kqRefreshPage() {
@@ -953,8 +1089,10 @@ nav a.active svg{transform:translateY(-1px);}
       KQ_STATE.lastSync = Date.now();
       try { var c = nasCfg() || {}; c.lastSync = KQ_STATE.lastSync; nasSaveCfg(c); } catch (e) {}
       KQ_STATE.lastMsg = "已同步（" + (r.pushed ? "本机改动已上传" : "无需上传") +
-        (r.pulled ? "，拉回 " + r.pulled + " 份" : "") + "，" + (reason || "手动") + "）";
+        (r.pulled ? "，拉回 " + r.pulled + " 份" : "") + (r.kept ? "，保留本机未上传 " + r.kept + " 份" : "") +
+        "，" + (reason || "手动") + "）";
       if (r.pulled) { kqRefreshPage(); }
+      if (r.kept) { kqToast("本机有未上传的改动，已保留并上传（" + (reason || "自动") + "）", true); }
       kqPaintStatus(); kqPaintMsg(KQ_STATE.lastMsg, true);
       return { ok: true, msg: KQ_STATE.lastMsg, pulled: r.pulled, pushed: r.pushed };
     }).catch(function (e) {
@@ -968,7 +1106,7 @@ nav a.active svg{transform:translateY(-1px);}
   function nasOverwrite() {
     if (!nasConfigured()) { return Promise.resolve({ ok: false, msg: "未连接 NAS（请先连接并登录）" }); }
     return nasReq("GET", kqOneUrl()).then(function (g) {
-      if (g.status === 401) { throw new Error("登录已过期，请重新连接"); }
+      if (g.status === 401) { kqMarkExpired(true, "GET /api/one"); throw new Error("登录已过期，请重新连接"); }
       if (!g.ok || !g.body || !g.body.ok) { throw new Error((g.body && g.body.error) || ("读取失败 " + g.status)); }
       var remote = g.body.data;
       var items = (remote && remote.items) ? remote.items : {};
@@ -978,10 +1116,15 @@ nav a.active svg{transform:translateY(-1px);}
         clean[uid] = { d: items[uid].d, t: Number(items[uid].t) || 0 };
       }
       kqWrite({ items: clean });
-      /* 让页面自己的 cloudTs 归零，否则页面会拿内存里的旧数据反推回本机 */
+      /* 覆盖本机：清掉页面自己的 cloudTs / cloudSig 与同步基线，页面下次拉取一律以服务器为准
+         （若不清，页面会拿内存里的旧数据指纹反推回本机）。 */
       try {
         var u = kqUid();
-        if (u) { localStorage.removeItem("kaoqin_cloud_ts_" + u); }
+        if (u) {
+          localStorage.removeItem("kaoqin_cloud_ts_" + u);
+          localStorage.removeItem("kaoqin_cloud_sig_" + u);
+          kqBaseNone(u);
+        }
       } catch (e) {}
       kqRefreshPage();
       var n = Object.keys(clean).length;
@@ -1020,7 +1163,7 @@ nav a.active svg{transform:translateY(-1px);}
     }
     kqWrite({ items: items });               /* 本机也记下新时间 */
     return nasReq("GET", kqOneUrl(true)).then(function (g) {
-      if (g.status === 401) { throw new Error("登录已过期，请重新连接"); }
+      if (g.status === 401) { kqMarkExpired(true, "GET /api/one"); throw new Error("登录已过期，请重新连接"); }
       if (!g.ok || !g.body || !g.body.ok) { throw new Error((g.body && g.body.error) || ("读取失败 " + g.status)); }
       var baseRev = g.body.rev;
       return nasReq("PUT", kqOneUrl(), { baseRev: baseRev, data: { v: 1, items: items } }).then(function (p) {
@@ -1032,6 +1175,10 @@ nav a.active svg{transform:translateY(-1px);}
           throw new Error("服务器刚被别人改动，重试 3 次仍未成功，请稍后再试");
         }
         if (!p.ok || !p.body || !p.body.ok) { throw new Error((p.body && p.body.error) || ("上传失败 " + p.status)); }
+        var u2;                                /* 手动整份上传成功 → 这批内容就是双方一致的基线 */
+        for (u2 in items) {
+          if (Object.prototype.hasOwnProperty.call(items, u2)) { kqSetBase(u2, kqSig(items[u2])); }
+        }
         return { ok: true, count: uids.length, rev: p.body.rev, retried: cnt.retries };
       });
     });
@@ -1115,9 +1262,13 @@ nav a.active svg{transform:translateY(-1px);}
       return Promise.resolve({ ok: false, msg: me });
     }
     var store = kqRead();
-    var merged = kqMergeInto(norm.items, store);     /* ts 大者胜 */
+    var merged = kqMergeByTs(norm.items, store);     /* 导入备份：ts 大者胜 */
     var finalCount = Object.keys(store.items).length;
-    if (merged) { kqWrite(store); }
+    if (merged) {
+      kqWrite(store);
+      /* 导入进来的内容按「未上传」对待：清掉基线，稍后整体上传时才算数 */
+      var iu; for (iu in norm.items) { if (Object.prototype.hasOwnProperty.call(norm.items, iu)) { kqBaseNone(iu); } }
+    }
     if (merged && typeof kqRefreshPage === "function") { kqRefreshPage(); }
     var base = "已导入备份：合并 " + merged + " 份（本机现有 " + finalCount + " 个账本）";
     if (!nasConfigured()) {
@@ -1161,11 +1312,70 @@ nav a.active svg{transform:translateY(-1px);}
     var el = document.getElementById("ls-kq-status");
     if (!el) { return; }
     var c = nasCfg();
+    if (KQ_STATE.expired) {          /* 令牌过期：必须让用户一眼看懂，并知道点哪儿 */
+      el.textContent = "⚠️ 登录已过期，请重新连接（点这里 → 填一次口令 →「重新连接」）";
+      el.style.color = "#ff8b8b";
+      return;
+    }
     if (!c || !c.token) { el.textContent = "未连接（数据只在本机）"; el.style.color = "#9aa3b2"; return; }
     var ts = KQ_STATE.lastSync || (c.lastSync ? Number(c.lastSync) : 0);
     el.textContent = "已连接 " + c.user + " @ " + String(c.url || "").replace(/^https?:\/\//, "") +
       "　最后同步：" + kqWhen(ts) + (KQ_STATE.pending ? "　有未上传的数据" : "");
     el.style.color = KQ_STATE.pending ? "#ffd28a" : "#8fe3a8";
+  }
+  /* ---- 令牌过期（401）：醒目提示 + 一键重连（口令不落盘 → 面板里现填，按钮会高亮聚焦它） ---- */
+  function kqMarkExpired(on, why) {
+    KQ_STATE.expired = !!on;
+    KQ_STATE.expiredWhy = on ? String(why || "") : "";
+    try { kqPaintExpiryBar(); } catch (e) {}
+    try { kqPaintStatus(); } catch (e) {}
+  }
+  function kqPaintExpiryBar() {
+    try {
+      var bar = document.getElementById("ls-kq-expired");
+      var btn = document.getElementById("ls-kq-reconnect");
+      if (!bar || !btn) { return; }
+      var on = !!KQ_STATE.expired;
+      bar.style.display = on ? "block" : "none";
+      btn.style.display = on ? "block" : "none";
+      if (on) { bar.textContent = "登录已过期，请重新连接"; }
+    } catch (e) {}
+  }
+  function kqReconnect() {
+    var c = nasCfg() || {};
+    var urlEl = document.getElementById("ls-kq-url");
+    var userEl = document.getElementById("ls-kq-user");
+    var passEl = document.getElementById("ls-kq-pass");
+    var url = String((urlEl && urlEl.value) || c.url || "").trim();
+    var user = String((userEl && userEl.value) || c.user || "").trim();
+    var pass = passEl ? passEl.value : "";
+    function say(t, okk) { kqPaintMsg(t, okk); try { kqToast(t, !!okk); } catch (e) {} }
+    if (!url || !user) { say("请先把服务器地址和使用者名字填上", false); return Promise.resolve({ ok: false }); }
+    if (!pass) {
+      if (passEl) {
+        passEl.style.borderColor = "#e5484d";
+        passEl.style.boxShadow = "0 0 0 2px rgba(229,72,77,.35)";
+        try { passEl.focus(); } catch (e) {}
+      }
+      say("请先在「口令」栏填一次你的登录口令，再点「重新连接」（口令不会保存在本机）", false);
+      return Promise.resolve({ ok: false, needPass: true });
+    }
+    if (passEl) { passEl.style.borderColor = ""; passEl.style.boxShadow = ""; }
+    say("正在重新连接…", true);
+    return nasLogin(url, user, pass).then(function (j) {
+      kqMarkExpired(false);
+      if (passEl) { passEl.value = ""; }
+      say("已重新连接" + (j && j.user ? "（" + j.user + "）" : "") + "，正在同步…", true);
+      return nasSync("重新连接后");
+    }).then(function (r) {
+      var good = !!(r && r.ok);
+      say(good ? "已重新连接并同步完成" : ("重新连接成功，但同步失败：" + ((r && r.msg) || "未知")), good);
+      return { ok: good };
+    })["catch"](function (e) {
+      var m = nasHint(e);
+      say("重新连接失败：" + m, false);
+      return { ok: false, error: m };
+    });
   }
   function kqPaintMsg(t, ok) {
     var el = document.getElementById("ls-kq-msg");
@@ -1548,6 +1758,10 @@ nav a.active svg{transform:translateY(-1px);}
       "<span style='color:#ffb4b4;font-weight:700'>红块</span> ＝ 一定要注意；" +
       "<span style='color:#8fe3a8;font-weight:700'>绿字</span> ＝ 好消息（放心）</div>" +
       "<div id='ls-kq-status' style='font-size:12.5px;margin-bottom:10px'></div>" +
+      "<div id='ls-kq-expired' style='display:none;background:#3a1518;border:1px solid #7a2a2a;border-radius:10px;"
+        + "padding:9px 10px;margin:0 0 8px;color:#ffb4b4;font-size:12.5px;line-height:1.6'></div>" +
+      "<button id='ls-kq-reconnect' style='display:none;width:100%;padding:11px;border-radius:10px;border:none;"
+        + "background:#b3261e;color:#fff;font-weight:700;cursor:pointer;margin:0 0 10px'>重新连接（用已保存的使用者名字）</button>" +
       kqRule("① 连接（每台设备做一次）") +
       "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>服务器地址（飞牛 NAS，带端口）</div>" +
       inp("ls-kq-url", urlVal, "http://你的NAS地址:8080") +
@@ -1636,6 +1850,8 @@ nav a.active svg{transform:translateY(-1px);}
         uf.parentNode.insertBefore(tip, uf.nextSibling);
       }
     })();
+    document.getElementById("ls-kq-reconnect").addEventListener("click", function () { kqReconnect(); });
+    kqPaintExpiryBar();
     document.getElementById("ls-kq-connect").addEventListener("click", function () {
       var url = document.getElementById("ls-kq-url").value.trim();
       var user = document.getElementById("ls-kq-user").value.trim();
@@ -1644,6 +1860,7 @@ nav a.active svg{transform:translateY(-1px);}
       kqPaintMsg("连接中…", true);
       nasLogin(url, user, pass).then(function (j) {
         kqPaintMsg("登录成功，正在同步…", true);
+        kqMarkExpired(false);
         kqPaintStatus();
         return nasSync("连接后");
       }).then(function (r) {
@@ -1790,7 +2007,13 @@ nav a.active svg{transform:translateY(-1px);}
     register: nasRegister, openRegister: showKqRegister, inviteInfo: nasInviteInfo,
     inviteEnabled: nasCheckInvite, registerEntry: nasPaintRegisterEntry,
     registerNameErr: nasRegNameErr,
-    visitPing: kqVisitPing, visitBase: kqVisitBase
+    visitPing: kqVisitPing, visitBase: kqVisitBase,
+    /* 同步状态只读入口（测试/排查用）：reqs = 已经真打出去的 /api/one 请求数，
+       pending = 该 uid 是否有未上传改动，base = 上次同步成功的基线指纹 */
+    pullStats: function () { return { reqs: kqPullCount(), pulling: !!__kqPullP }; },
+    isExpired: function () { return !!KQ_STATE.expired; },
+    markExpired: kqMarkExpired, reconnect: kqReconnect, openPanel: showNas,
+    pending: kqIsPending, syncBase: kqBase, syncKey: function () { return SYNC_KEY; }
   };
   window.__lsRescue = { version: RESCUE_VERSION, page: RESCUE_PAGE, dump: rescueDump,
                         save: rescueSave, count: rescueCount, mask: rescueMaskToken };
@@ -1808,7 +2031,7 @@ nav a.active svg{transform:translateY(-1px);}
            `var` 落到全局会和页面自己的变量撞名（PAGE_VERSION 之类）。           */
 (function () {
   var PAGE_ID = "kaoqin";            /* 版本检测：本页在 /api/version 里的标识 */
-  var PAGE_VERSION = "2026-10-14c";      /* 构建期写死的「本页版本」；与服务端解析结果比 */
+  var PAGE_VERSION = "2026-10-15a";      /* 构建期写死的「本页版本」；与服务端解析结果比 */
   var UPDATE_BACKUP_KEY = "mini-apps-update-backup-v1";
   var UPDATE_TRACE_KEY = "mini-apps-update-trace-v1";   /* 只给自动化测试看：更新路径里的 setItem 键名 */
   var UPDATE_IGNORE_KEY = "mini-apps-update-ignore-v1";
@@ -2127,7 +2350,7 @@ nav a.active svg{transform:translateY(-1px);}
   if (document.readyState === "loading") { document.addEventListener("DOMContentLoaded", boot); }
   else { boot(); }
 })();
-</script><!-- kq-ver 2026-10-14c -->
+</script><!-- kq-ver 2026-10-15a -->
 <script>
 "use strict";
 /* ============================================================
@@ -2353,28 +2576,87 @@ function clearUid(){
 
 /* ===== 云端同步（保存到 NAS 后台，跨设备共享） =====
  * 服务器：GET /userdata?uid= 读、POST /save 写（data_user_<uid>.json）
- * 合并规则：启动时若服务器数据比本机新 → 以服务器为准覆盖；
- *           否则把本机数据推送到服务器。保存后自动同步。 */
-let CLOUD = { status: "off" }; /* off 仅本机 | loading 同步中 | syncing 保存中 | ok 已同步 | fail 未同步 */
+ *
+ * 合并规则（2026-10-15a 真修复，务必保持）：
+ *   · **打开 / 刷新 / 回前台时一律以服务器为准拉取**：只要成功拿到服务器账本就读进内存并重绘。
+ *     不要再拿「服务器 ts 是否大于本机 cloudTs」决定要不要拉：cloudTs 会在每次自动保存时被
+ *     刷成当前时间，于是哪怕另一台设备刚写完，本机也判成「服务器不比本机新」→ 跳过拉取 →
+ *     界面永远停在旧数据（用户反复遇到的「手机记完电脑不同步」就是这个）。
+ *   · 服务器是权威副本；分设备合并（含 ts 比较）由左下角 ⇅ 那层 NAS 同步在服务端做，
+ *     /userdata 返回的就是它合并后的最新账本，这里照着读、照着画即可。
+ *   · **绝不丢本机未上传的改动**：只有本机账本与服务器内容一致（或服务器 ts 更新）才整份采用；
+ *     若本机有「服务器上没有、且本机 ts 更新」的改动（未上传），保留本机并立即推送，
+ *     并提示用户（见 loadFromServer 的「本机改动较新」分支）。
+ *   · 采用服务器版本时不再 syncToServer()：那份数据本来就是服务器上的，再用当前时间回推
+ *     会把别的设备已经在用的新数据挤掉（也会让 cloudTs 虚高，正是老 bug 的成因之一）。
+ * 保存后仍按原样自动同步（doSync）。 */
+let CLOUD = { status: "off", adopting: false }; /* off 仅本机 | loading 同步中 | syncing 保存中 | ok 已同步 | fail 未同步 */
 function cloudTsKey(){ return "kaoqin_cloud_ts" + (UID ? "_" + UID : ""); }
+function cloudSigKey(){ return "kaoqin_cloud_sig" + (UID ? "_" + UID : ""); }
 let _syncTimer = null;
 function cloudTs(){ return Number(localStorage.getItem(cloudTsKey()) || 0); }
 function setCloudTs(ts){ localStorage.setItem(cloudTsKey(), String(ts)); }
+function cloudSig(){ return localStorage.getItem(cloudSigKey()) || ""; }
+function setCloudSig(s){ localStorage.setItem(cloudSigKey(), s); }
+/* 本机内容的稳定指纹：只算数据本身，ts 不参与（ts 每次保存都会变，带上就永远判成"变过"） */
+function cloudSigOf(ts){
+  const body = { edits: EDITS, salary: SAL, debts: DEBTS, incomes: INCOMES, persons: PERSONS, useSrc: USE_SRC };
+  const ks = Object.keys(body).sort();
+  const parts = ks.map(k=>JSON.stringify(k)+":"+JSON.stringify(body[k])).join(",");
+  return (ts==null ? "" : String(ts) + "|") + "{" + parts + "}";
+}
+/* 同步基线 = "上一次与服务器交换后双方一致的那份内容"（采用服务器版本或上传成功后写入）。
+ * 存两段："<服务器账本指纹>|<本机内容指纹>"，因为采用服务器版本时页面会把 ts 记成服务器的，
+ * 而本机内容指纹只能按当前内存算 —— 两者不是在同一个时刻算出来的。 */
+function cloudSigParts(){
+  const s = cloudSig(), i = s.indexOf("|");
+  return i < 0 ? { srv: "", loc: s } : { srv: s.slice(0, i), loc: s.slice(i + 1) };
+}
+/* 本机是否"自上次与服务器一致以来真的改过内容"（用本机内容指纹比，不受服务器 t 影响） */
+function cloudLocalDirty(){ return !!UID && cloudSigParts().loc !== cloudSigOf(); }
+/* 采用服务器账本后：双方一致 = 服务器那份内容 == 本机现在的内容 */
+function cloudMarkAdopted(ts){
+  const now = cloudSigOf();
+  setCloudTs(ts);
+  setCloudSig(now + "|" + now);
+}
 function syncToServer(){
-  if (!UID) return;
+  if (!UID || CLOUD.adopting) return;   /* 正在采用服务器账本时不要反向回推（见上面注释） */
   clearTimeout(_syncTimer);
   _syncTimer = setTimeout(doSync, 800);
 }
 async function doSync(){
+  if (!UID || CLOUD.adopting) return;
   const payload = { uid: UID, edits: EDITS, salary: SAL, debts: DEBTS, incomes: INCOMES, persons: PERSONS, useSrc: USE_SRC, ts: Date.now() };
   CLOUD.status = "syncing"; updateCloudUI();
   try {
     const r = await fetch("/save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const j = await r.json().catch(()=>null);
-    if (r.ok && j && j.ok){ CLOUD.status = "ok"; setCloudTs(payload.ts); }
-    else CLOUD.status = "fail";
+    if (r.ok && j && j.ok){
+      CLOUD.status = "ok";
+      setCloudTs(payload.ts);
+      setCloudSig(cloudSigOf() + "|" + cloudSigOf());   /* 上传成功：本机这份就是服务器那份 */
+    } else CLOUD.status = "fail";
   } catch(e){ CLOUD.status = "off"; }
   updateCloudUI();
+}
+/* 采用服务器账本：写进内存 + 落盘 + 重绘。CLOUD.adopting 期间禁止反向回推。 */
+function cloudAdopt(d, ts){
+  CLOUD.adopting = true;
+  try {
+    if (d.edits && typeof d.edits === "object") EDITS = d.edits;
+    if (d.salary && typeof d.salary === "object") SAL = d.salary;
+    if (Array.isArray(d.debts)) DEBTS = d.debts;
+    if (Array.isArray(d.incomes)) INCOMES = d.incomes;
+    if (Array.isArray(d.persons) && d.persons.length) PERSONS = d.persons;
+    if (d.useSrc === false) USE_SRC = false;
+    else if (d.useSrc === true) USE_SRC = true;
+    /* useSrc 缺失（旧服务器数据）：保持本地值，避免新用户被强制显示源表 */
+    cloudMarkAdopted(ts);
+    saveEdits(); saveSal(); saveDebts(); saveIncome(); savePersons();
+    renderPersonSwitch(); render();
+    checkAutoInstallment();
+  } finally { CLOUD.adopting = false; }
 }
 async function loadFromServer(){
   if (!UID){ updateCloudUI(); return; }
@@ -2384,25 +2666,21 @@ async function loadFromServer(){
     const j = await r.json().catch(()=>null);
     if (r.ok && j && j.ok && j.data && j.data.ts){
       const st = Number(j.data.ts);
-      if (st > cloudTs()){
-        /* 服务器比本机新：以服务器为准 */
-        if (j.data.edits && typeof j.data.edits === "object") EDITS = j.data.edits;
-        if (j.data.salary && typeof j.data.salary === "object") SAL = j.data.salary;
-        if (Array.isArray(j.data.debts)) DEBTS = j.data.debts;
-        if (Array.isArray(j.data.incomes)) INCOMES = j.data.incomes;
-        if (Array.isArray(j.data.persons) && j.data.persons.length) PERSONS = j.data.persons;
-        if (j.data.useSrc === false) USE_SRC = false;
-        else if (j.data.useSrc === true) USE_SRC = true;
-        /* useSrc 缺失（旧服务器数据）：保持本地值，避免新用户被强制显示源表 */
-        setCloudTs(st);
-        saveEdits(); saveSal(); saveDebts(); saveIncome(); savePersons();
-        renderPersonSwitch(); render();
-        checkAutoInstallment();
-        CLOUD.status = "ok";
+      if (!cloudLocalDirty()){
+        /* ★ 本机内容自上次与服务器一致以来**没改过** → 一律采用服务器账本并重绘。
+         * 这是本轮的核心修复：不再用"服务器 ts 是否更大"当门槛（cloudTs 会被本机自动保存刷高，
+         * 于是永远判成"服务器不比本机新"→ 跳过拉取 → 手机记完电脑永远不更新）。
+         * 采用服务器版本 = 服务器是权威副本；分设备合并由垫片/服务端那层按内容做。 */
+        cloudAdopt(j.data, st);
       } else {
-        /* 本机与服务器相同或更新 → 推送本机 */
-        CLOUD.status = "ok";
-        syncToServer();
+        /* 本机确实改过内容、且服务器不比本机新 → 保留本机、立刻推送，绝不静默覆盖用户刚记的东西
+         * （用严格 > ：本机刚记的那一刻 t 完全可能等于服务器 t） */
+        if (st > cloudTs()) { cloudAdopt(j.data, st); }
+        else {
+          CLOUD.status = "ok";
+          syncToServer();
+          toast("本机有未上传的改动，已保留并上传");
+        }
       }
     } else if (r.status === 403){
       CLOUD.status = "off";
@@ -2412,6 +2690,18 @@ async function loadFromServer(){
     }
   } catch(e){ CLOUD.status = "off"; }
   updateCloudUI();
+}
+/* 自动定时拉取（服务器权威副本，跨设备才能跟上）。
+ * 页面内切换月份 / 人员走内存账本渲染，不额外发请求（见 setPerson / render）。 */
+let _pullTimer = null;
+const PULL_PERIOD_MS = 5 * 60 * 1000;   /* 5 分钟一次 */
+function startAutoPull(){
+  if (_pullTimer) return;
+  try { _pullTimer = setInterval(()=>{ loadFromServer(); }, PULL_PERIOD_MS); } catch(e){}
+  document.addEventListener("visibilitychange", ()=>{
+    if (document.visibilityState === "visible") loadFromServer();   /* 回到前台立刻拉一次 */
+  });
+  window.addEventListener("online", ()=>{ loadFromServer(); });     /* 网络恢复也拉 */
 }
 function updateCloudUI(){
   const el = document.getElementById("cloudState");
@@ -3873,7 +4163,7 @@ initUid();
 loadAllData();
 renderPersonSwitch();
 route();
-if (UID){ loadFromServer(); checkAutoInstallment(); } else openPinGate();
+if (UID){ loadFromServer(); checkAutoInstallment(); startAutoPull(); } else openPinGate();
 </script>
 </body>
 </html>
