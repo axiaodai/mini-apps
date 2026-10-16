@@ -2020,8 +2020,21 @@ html, body { max-width: 100%; overflow-x: hidden; }
   /* ---- NAS 同步（多设备互通编辑）---- */
   var NAS_KEY = "mini-apps-nas-v1";
   var NAS_KINDS = ["blood", "running", "redeem", "intervals", "tomb"];
-  var NAS_STATE = { busy: false, lastMsg: "", pending: false, lastSync: 0, tombSlot: null, expired: false, expiredWhy: "" };
+  var NAS_STATE = { busySince: 0, busy: false, lastMsg: "", pending: false, lastSync: 0, tombSlot: null, expired: false, expiredWhy: "" };
 
+  /* ==__LS_NONBLOCK_MARK== 慢链路下的同步：3 秒超时 + 不吓人的状态呈现 ----------
+     只影响"怎么显示/等多久"，不动任何合并与数据逻辑。 */
+  var NAS_TIMEOUT_MS = 3000;
+  function nasBusySince() {
+    if (!NAS_STATE.busy) { NAS_STATE.busySince = 0; return 0; }
+    if (!NAS_STATE.busySince) { NAS_STATE.busySince = Date.now(); }
+    return NAS_STATE.busySince;
+  }
+  function nasBusySlow() { var s = nasBusySince(); return !!s && (Date.now() - s) > 1000; }
+  function nasHHMM(ts) {
+    var d = new Date(ts || Date.now());
+    return ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2);
+  }
   function nasCfg() {
     try { return JSON.parse(safeGet(NAS_KEY) || "null"); } catch (e) { return null; }
   }
@@ -2137,12 +2150,31 @@ html, body { max-width: 100%; overflow-x: hidden; }
     var opts = { method: method, headers: {}, cache: "no-store" };
     if (c && c.token) { opts.headers["Authorization"] = "Bearer " + c.token; }
     if (body !== undefined) { opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(body); }
+    /* 3 秒超时：慢链路上不能让"同步中"挂太久；超时当失败处理（保留本机数据，下一轮再试） */
+    var _ctl = null, _timer = null, _timedOut = false;
+    try {
+      if (typeof AbortController === "function") {
+        _ctl = new AbortController();
+        opts.signal = _ctl.signal;
+        _timer = setTimeout(function () { _timedOut = true; try { _ctl.abort(); } catch (e) {} }, NAS_TIMEOUT_MS);
+      }
+    } catch (e) {}
+    function _done() { if (_timer) { clearTimeout(_timer); _timer = null; } }
     return fetch(url, opts).then(function (r) {
-      return r.text().then(function (t) {
-        var j = null;
-        try { j = JSON.parse(t); } catch (e) {}
-        return { status: r.status, ok: r.ok, body: j, raw: t };
-      });
+      return r.text().then(function (t) { return { status: r.status, ok: r.ok, body: t }; });
+    }).then(function (x) {
+      _done();
+      var j = null;
+      try { j = JSON.parse(x.body); } catch (e) {}
+      return { status: x.status, ok: x.ok, body: j, raw: x.body };
+    })["catch"](function (e) {
+      _done();
+      if (_timedOut) {
+        var te = new Error("同步超时（" + (NAS_TIMEOUT_MS / 1000) + " 秒内没收到服务器回应）");
+        te.timeout = true;
+        throw te;
+      }
+      throw e;
     });
   }
   function nasHint(err) {
@@ -2606,11 +2638,34 @@ html, body { max-width: 100%; overflow-x: hidden; }
       return;
     }
     if (!c || !c.token) { el.textContent = "未连接"; el.style.color = "#9aa3b2"; return; }
-    var t = NAS_STATE.lastSync ? new Date(NAS_STATE.lastSync) : (c.lastSync ? new Date(c.lastSync) : null);
-    var when = t ? (t.getMonth() + 1 + "月" + t.getDate() + "日 " + ("0" + t.getHours()).slice(-2) + ":" + ("0" + t.getMinutes()).slice(-2)) : "尚未同步";
-    el.textContent = "已连接 " + c.user + " @ " + String(c.url).replace(/^https?:\/\//, "") +
-      "　最后同步：" + when + (NAS_STATE.pending ? "　⚠️ 有未上传的数据" : "");
-    el.style.color = NAS_STATE.pending ? "#ffd28a" : "#8fe3a8";
+    var head = "已连接 " + c.user + " @ " + String(c.url).replace(/^https?:\/\//, "");
+    el.style.cursor = ""; el.onclick = null;
+    /* 忙：只有真的忙超过 1 秒才显示，且是淡色小字（不抢眼）；刚点下去那一秒不闪 */
+    if (NAS_STATE.busy && nasBusySlow()) {
+      el.textContent = head + "　· 同步中";
+      el.style.color = "#9aa3b2";
+      return;
+    }
+    if (NAS_STATE.busy) {
+      var ts0 = NAS_STATE.lastSync || (c.lastSync ? Number(c.lastSync) : 0);
+      el.textContent = head + "　" + (ts0 ? ("已同步 · " + nasHHMM(ts0)) : "连接中…");
+      el.style.color = "#8fe3a8";
+      return;
+    }
+    var ts1 = NAS_STATE.lastSync || (c.lastSync ? Number(c.lastSync) : 0);
+    if (NAS_STATE.pending) {
+      /* 忙完了还有待上传（含超时/失败）→ 明确给出可点重试，而不是一直"同步中" */
+      el.textContent = head + "　同步失败（点这里重试）";
+      el.style.color = "#ffd28a";
+      el.style.cursor = "pointer";
+      el.onclick = function (e) {
+        try { if (e && e.preventDefault) { e.preventDefault(); } } catch (e2) {}
+        try { nasSync("点状态行重试"); } catch (e3) {}
+      };
+      return;
+    }
+    el.textContent = head + "　已同步 · " + (ts1 ? nasHHMM(ts1) : "—");
+    el.style.color = "#8fe3a8";
   }
   function nasPaintModalMsg() {
     var el = document.getElementById("ls-nas-msg");
@@ -2880,7 +2935,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
            `var` 落到全局会和页面自己的变量撞名（PAGE_VERSION 之类）。              */
 (function () {
   var PAGE_ID = "blood-blank";           /* 版本检测：本页在 /api/version 里的标识（注入时替换） */
-  var PAGE_VERSION = "2026-10-15a";      /* 构建期写死的「本页版本」；与服务端解析结果比 */
+  var PAGE_VERSION = "2026-10-16a";      /* 构建期写死的「本页版本」；与服务端解析结果比 */
   var UPDATE_BACKUP_KEY = "mini-apps-update-backup-v1";
   var UPDATE_TRACE_KEY = "mini-apps-update-trace-v1";   /* 只给自动化测试看：更新路径里的 setItem 键名 */
   var UPDATE_IGNORE_KEY = "mini-apps-update-ignore-v1";
@@ -4101,7 +4156,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
         v = document.createElement("div");
         v.id = "ls-version";
         v.style.cssText = "margin-top:10px;padding-top:8px;border-top:1px solid #2a3040;font-size:11px;color:#8b94a6;text-align:center;line-height:1.6";
-        v.textContent = "版本 2026-10-15a · 含 NAS 同步";
+        v.textContent = "版本 2026-10-16a · 含 NAS 同步";
       }
       if (v.parentNode !== p || p.lastElementChild !== v) { p.appendChild(v); }
       return v;
