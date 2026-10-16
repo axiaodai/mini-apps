@@ -50,6 +50,9 @@ body{
 button{font-family:inherit;}
 ::selection{background:var(--brand-soft);}
 .cloud-state{font-size:11px; color:#9aa7a2; background:rgba(255,255,255,.10); padding:3px 9px; border-radius:99px; white-space:nowrap; letter-spacing:.2px; transition:color .3s;}
+/* 「同步中」只在真的忙超过 1 秒后才出现，并且**不用醒目胶囊**：透明底 + 淡色小字 + 一个小圆点 */
+.cloud-state.busy{background:transparent; padding:3px 2px; color:#9aa7a2; font-size:10.5px; letter-spacing:.4px;}
+.cloud-state.busy::before{content:""; display:inline-block; width:5px; height:5px; border-radius:50%; background:currentColor; opacity:.8; margin-right:4px; vertical-align:middle;}
 /* ===== 顶部 ===== */
 header{
   position:sticky; top:0; z-index:20; overflow:hidden;
@@ -538,7 +541,7 @@ nav a.active svg{transform:translateY(-1px);}
 (function () {
   var KEY = "kaoqin_local_cloud_v1";     /* 本机存储：{v:2, items:{"<uid>":{d,t}}} */
   var KQ_APP = "kaoqin";                 /* 服务端槽位 */
-  var KQ_VER = "版本 2026-10-15a · 含 NAS 同步";   /* 只在 NAS 面板里显示；界面左下角不再显示版本 */
+  var KQ_VER = "版本 2026-10-16a · 含 NAS 同步";   /* 只在 NAS 面板里显示；界面左下角不再显示版本 */
   var realFetch = window.fetch ? window.fetch.bind(window) : null;
 
   /* ---------- 本机存储（按 uid 分开，每个 uid 一份 {d,t}） ---------- */
@@ -573,6 +576,16 @@ nav a.active svg{transform:translateY(-1px);}
      关键：t（时间戳）不参与比较。老实现拿「服务器 t 是否大于本机 t」当门槛，而 t 每次保存
      都会被刷新，于是服务器哪怕刚被另一台设备写了新数据，也会被判成「不比本机新」而跳过拉取 ——
      这就是「手机记完电脑不同步」的根因。 */
+  /* 本机账本里到底有没有"内容"（编辑 / 月薪 / 欠款 / 收益 任一非空）。
+     用途：页面在"本机还没拉到服务器数据"的那一小段时间里可能先推过一次空账本；
+     空账本没有"用户刚记的东西"可保护，绝不能用它去盖掉服务器上的数据。 */
+  function kqHasContent(rec) {
+    var d = kqD(rec);
+    function nonEmpty(o) { return !!o && typeof o === "object" && Object.keys(o).length > 0; }
+    return nonEmpty(d.edits) || nonEmpty(d.salary)
+        || (Array.isArray(d.debts) && d.debts.length > 0)
+        || (Array.isArray(d.incomes) && d.incomes.length > 0);
+  }
   var SYNC_KEY = "kaoqin_nas_sync_v1";    /* {items:{"<uid>":{sig,len}}} */
   function lsRead(key) {
     try { return JSON.parse(localStorage.getItem(key) || "null"); } catch (e) { return null; }
@@ -657,15 +670,18 @@ nav a.active svg{transform:translateY(-1px);}
     var method = ((init.method || "GET") + "").toUpperCase();
     if (path === "/userdata" && method === "GET") {
       var uid = qs(url, "uid");
-      /* 打开/刷新页面时页面第一件事就是读这里。**先真拉一次服务器（合并 + 必要时上传），
-         再回话**，这样页面拿到的永远是最新账本 —— 这才是「另一台设备刚记完，本机刷新就能看到」。
-         老实现直接回本机存储：本机那份可能很旧，而页面当时只在「服务器 ts 更大」时才采用，
-         于是永远看不到手机刚记的数据。拉取失败（离线）时退回本机，页面照旧可用。 */
-      return kqWaitPull("打开页面").then(function () {
-        var db = kqRead(), rec = db.items[uid];
-        if (!rec) { return reply({ ok: false, error: "no data for this uid" }); }
-        return reply({ ok: true, data: rec.d, pending: kqIsPending(uid) });
-      });
+      /* ★ 首屏必须秒出：**立刻用本机账本回话**，网络同步丢到后台跑（kqPullInBackground）。
+         旧实现是"先真同步一次再回话"（kqWaitPull），首屏渲染被网络阻塞 ——
+         在花生壳这种慢链路上会长时间停在"同步中…"，用户以为卡死。
+         后台同步完只有**内容真的变了**才通知页面重绘（见 nasSync 的 if (r.pulled) kqRefreshPage()）。 */
+      kqPullInBackground("打开页面");
+      var db = kqRead(), rec = db.items[uid];
+      if (!rec) {
+        /* 本机还没有该 uid 的账本：明确告诉页面"还在后台取"，页面据此**先不推**
+           （推了会把服务器上的数据盖掉；后台取回并采用后会自动重绘） */
+        return reply({ ok: false, loading: true, error: "本机还没有该使用者数据（正在后台向服务器取）" });
+      }
+      return reply({ ok: true, data: rec.d, pending: kqIsPending(uid) });
     }
     if (path === "/save" && method === "POST") {
       var body = null;
@@ -689,7 +705,7 @@ nav a.active svg{transform:translateY(-1px);}
 
   /* ---------- NAS 同步（多设备互通，独立槽位 kaoqin） ---------- */
   var NAS_KEY = "mini-apps-nas-v1";      /* 与献血/跑步页共用：那边连过这里就是已连接 */
-  var KQ_STATE = { busy: false, lastMsg: "", pending: false, lastSync: 0, lastErr: "",
+  var KQ_STATE = { busy: false, lastMsg: "", pending: false, lastSync: 0, lastErr: "", lastPullAt: 0,
                    expired: false, expiredWhy: "" };   /* expired: 令牌过期（401），面板要醒目提示 + 一键重连 */
 
   function nasCfg() {
@@ -709,18 +725,38 @@ nav a.active svg{transform:translateY(-1px);}
     var c = nasCfg();
     return !!(c && c.url && c.token && c.user);
   }
+  var NAS_TIMEOUT_MS = 3000;   /* 单次请求 3 秒超时：超时**不算致命** —— 保留本机数据显示，
+                                  等下一轮（回前台 / 每 5 分钟 / 联网恢复）再试，绝不阻塞首屏 */
   function nasReq(method, path, body) {
     var c = nasCfg();
     var url = nasBase() + path;
     var opts = { method: method, headers: {}, cache: "no-store" };
     if (c && c.token) { opts.headers["Authorization"] = "Bearer " + c.token; }
     if (body !== undefined) { opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(body); }
+    var ctl = null, timer = null, timedOut = false;
+    try {
+      if (typeof AbortController === "function") {
+        ctl = new AbortController();
+        opts.signal = ctl.signal;
+        timer = setTimeout(function () { timedOut = true; try { ctl.abort(); } catch (e) {} }, NAS_TIMEOUT_MS);
+      }
+    } catch (e) {}
+    function done() { if (timer) { clearTimeout(timer); timer = null; } }
     return fetch(url, opts).then(function (r) {
-      return r.text().then(function (t) {
-        var j = null;
-        try { j = JSON.parse(t); } catch (e) {}
-        return { status: r.status, ok: r.ok, body: j, raw: t };
-      });
+      return r.text().then(function (t) { return { status: r.status, ok: r.ok, body: t }; });
+    }).then(function (x) {
+      done();
+      var j = null;
+      try { j = JSON.parse(x.body); } catch (e) {}
+      return { status: x.status, ok: x.ok, body: j, raw: x.body };
+    })["catch"](function (e) {
+      done();
+      if (timedOut) {
+        var te = new Error("同步超时（" + (NAS_TIMEOUT_MS / 1000) + " 秒内没收到服务器回应）");
+        te.timeout = true;
+        throw te;
+      }
+      throw e;
     });
   }
   function nasHint(err) {
@@ -982,8 +1018,11 @@ nav a.active svg{transform:translateY(-1px);}
         continue;
       }
       /* 本机真的改过内容（未上传）：本机更新就保留并稍后推送；服务器更新才让服务器胜出。
-         用严格 > ：本机刚记的那一刻 t 完全可能等于服务器 t，此时要站在"用户刚记的东西"这一边。 */
-      if (mt > rt) { kept++; continue; }
+         用严格 > ：本机刚记的那一刻 t 完全可能等于服务器 t，此时要站在"用户刚记的东西"这一边。
+         例外：本机这份是**空账本**（没有任何编辑/月薪/欠款/收益）而服务器有内容 → 采用服务器。
+         空账本没有可保护的"用户刚记的东西"；这条同时挡住"页面还没拉到数据就先推了空账本"的竞态，
+         否则那一下会把服务器上的数据盖掉（这是本轮改成非阻塞首屏后新引入的风险点）。 */
+      if (mt > rt && (kqHasContent(mine) || !kqHasContent(r))) { kept++; continue; }
       store.items[uid] = { d: r.d, t: rt };
       kqSetBase(uid, rsig);
       pulled++;
@@ -1043,10 +1082,9 @@ nav a.active svg{transform:translateY(-1px);}
       });
     });
   }
-  /* 等一次真实同步跑完（页面打开时 /userdata 先等它，保证「一打开就是服务器最新」）。
-     同一时刻只跑一次，其它调用共享同一个 Promise；失败也不让页面请求失败。
+  /* 等一次真实同步跑完（面板/手动/后台共用）。同一时刻只跑一次，其它调用共享同一个 Promise。
      注：/api/one 的 GET 每次都带唯一串破缓存（kqOneUrl），所以不能用缓存/URL 去重，
-     必须在这里用 __kqPullP 显式合流，否则页面一开就会连打好几次。 */
+     必须在这里用 __kqPullP 显式合流。 */
   var __kqPullP = null;
   function kqPullCount() { return __kqBust; }   /* 已经真打出去的 /api/one 请求数（只读，给测试断言用） */
   function kqSyncOnce(reason) {
@@ -1056,11 +1094,26 @@ nav a.active svg{transform:translateY(-1px);}
       function (e) { __kqPullP = null; throw e; });
     return __kqPullP;
   }
-  function kqWaitPull(reason) {
-    if (!nasConfigured()) { return Promise.resolve(); }
+  /* 后台拉取（**不阻塞任何调用方**）：打开/刷新页面时用它 —— 首屏用本机账本秒出，
+     网络同步在后台跑；同步结束后只把"成不成功"告诉页面（状态栏收尾成"已同步 · HH:mm"或"同步失败（可重试）"）。
+     ★ 注意：**绝不能在这里顺手把页面的 cloudTs 改成"现在"** —— 那会让本机看起来比服务器新，
+       页面就会拒收服务器刚拉回来的新内容、反而把旧的本机账本推上去（实测踩过）。
+       有变化时 nasSync 自己会 kqRefreshPage() 触发重绘（只在 r.pulled > 0 时）。 */
+  function kqNotifyPage(ok) {
+    try { if (typeof cloudNoteSyncResult === "function") { cloudNoteSyncResult(!!ok); } } catch (e) {}
+  }
+  function kqPullInBackground(reason) {
+    if (!nasConfigured()) { return; }
+    /* 合流 + 冷却：正在拉就不再发起；刚拉过（1.5 秒内）也不重复拉。
+       否则每次 /userdata、每次重绘都会各发一轮请求 —— 慢链路上既费流量又容易和
+       用户手动点的"立即同步"撞成"正在同步中"（实测踩过）。 */
+    var now = Date.now();
+    if (KQ_STATE.lastPullAt && (now - KQ_STATE.lastPullAt) < 1500) { return; }
     var p;
-    try { p = kqSyncOnce(reason); } catch (e) { return Promise.resolve(); }
-    return p.then(function () {}, function () {});   /* 连不上服务器也不能让 /userdata 失败 */
+    try { p = kqSyncOnce(reason); } catch (e) { return; }
+    KQ_STATE.lastPullAt = now;
+    p.then(function (r) { kqNotifyPage(!!(r && r.ok)); },
+           function () { kqNotifyPage(false); });
   }
   /* 页面数据刷新：优先调用页面自己的刷新函数，没有就整页重载一次（防死循环） */
   function kqRefreshPage() {
@@ -2031,7 +2084,7 @@ nav a.active svg{transform:translateY(-1px);}
            `var` 落到全局会和页面自己的变量撞名（PAGE_VERSION 之类）。           */
 (function () {
   var PAGE_ID = "kaoqin";            /* 版本检测：本页在 /api/version 里的标识 */
-  var PAGE_VERSION = "2026-10-15a";      /* 构建期写死的「本页版本」；与服务端解析结果比 */
+  var PAGE_VERSION = "2026-10-16a";      /* 构建期写死的「本页版本」；与服务端解析结果比 */
   var UPDATE_BACKUP_KEY = "mini-apps-update-backup-v1";
   var UPDATE_TRACE_KEY = "mini-apps-update-trace-v1";   /* 只给自动化测试看：更新路径里的 setItem 键名 */
   var UPDATE_IGNORE_KEY = "mini-apps-update-ignore-v1";
@@ -2350,7 +2403,7 @@ nav a.active svg{transform:translateY(-1px);}
   if (document.readyState === "loading") { document.addEventListener("DOMContentLoaded", boot); }
   else { boot(); }
 })();
-</script><!-- kq-ver 2026-10-15a -->
+</script><!-- kq-ver 2026-10-16a -->
 <script>
 "use strict";
 /* ============================================================
@@ -2590,14 +2643,37 @@ function clearUid(){
  *   · 采用服务器版本时不再 syncToServer()：那份数据本来就是服务器上的，再用当前时间回推
  *     会把别的设备已经在用的新数据挤掉（也会让 cloudTs 虚高，正是老 bug 的成因之一）。
  * 保存后仍按原样自动同步（doSync）。 */
-let CLOUD = { status: "off", adopting: false }; /* off 仅本机 | loading 同步中 | syncing 保存中 | ok 已同步 | fail 未同步 */
+let CLOUD = { status: "off", adopting: false, since: 0, bootAt: Date.now(), lastOkAt: 0, tried: false };
+/* off 仅本机 | loading 同步中 | syncing 保存中 | ok 已同步 | fail 未同步
+ * since     = 本轮"忙"是从什么时候开始的（用来实现"忙过 1 秒才显示同步中"）
+ * bootAt    = 页面脚本开始跑的时刻（首 1 秒内不显示"同步中…"，别一打开就吓人）
+ * lastOkAt  = 最近一次同步成功的时刻（显示「已同步 · HH:mm」）
+ * tried     = 有没有真的发起过同步（没发起过就不要说"同步失败"） */
 function cloudTsKey(){ return "kaoqin_cloud_ts" + (UID ? "_" + UID : ""); }
 function cloudSigKey(){ return "kaoqin_cloud_sig" + (UID ? "_" + UID : ""); }
 let _syncTimer = null;
+let _cloudBusyTimer = null;
 function cloudTs(){ return Number(localStorage.getItem(cloudTsKey()) || 0); }
 function setCloudTs(ts){ localStorage.setItem(cloudTsKey(), String(ts)); }
 function cloudSig(){ return localStorage.getItem(cloudSigKey()) || ""; }
 function setCloudSig(s){ localStorage.setItem(cloudSigKey(), s); }
+/* 进入"忙"状态：记下起始时刻，并安排 1 秒后再刷一次状态栏
+ * （于是"同步中…"只在真的忙超过 1 秒之后才出现，快的时候用户根本看不到） */
+function cloudBusy(status){
+  CLOUD.status = status;
+  CLOUD.tried = true;
+  if (!CLOUD.since) CLOUD.since = Date.now();
+  updateCloudUI();
+  clearTimeout(_cloudBusyTimer);
+  _cloudBusyTimer = setTimeout(updateCloudUI, 1100);
+}
+function cloudIdle(status){
+  CLOUD.status = status;
+  CLOUD.since = 0;
+  if (status === "ok") CLOUD.lastOkAt = Date.now();
+  clearTimeout(_cloudBusyTimer);
+  updateCloudUI();
+}
 /* 本机内容的稳定指纹：只算数据本身，ts 不参与（ts 每次保存都会变，带上就永远判成"变过"） */
 function cloudSigOf(ts){
   const body = { edits: EDITS, salary: SAL, debts: DEBTS, incomes: INCOMES, persons: PERSONS, useSrc: USE_SRC };
@@ -2628,17 +2704,16 @@ function syncToServer(){
 async function doSync(){
   if (!UID || CLOUD.adopting) return;
   const payload = { uid: UID, edits: EDITS, salary: SAL, debts: DEBTS, incomes: INCOMES, persons: PERSONS, useSrc: USE_SRC, ts: Date.now() };
-  CLOUD.status = "syncing"; updateCloudUI();
+  cloudBusy("syncing");
   try {
     const r = await fetch("/save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const j = await r.json().catch(()=>null);
     if (r.ok && j && j.ok){
-      CLOUD.status = "ok";
       setCloudTs(payload.ts);
       setCloudSig(cloudSigOf() + "|" + cloudSigOf());   /* 上传成功：本机这份就是服务器那份 */
-    } else CLOUD.status = "fail";
-  } catch(e){ CLOUD.status = "off"; }
-  updateCloudUI();
+      cloudIdle("ok");
+    } else cloudIdle("fail");
+  } catch(e){ cloudIdle("fail"); }
 }
 /* 采用服务器账本：写进内存 + 落盘 + 重绘。CLOUD.adopting 期间禁止反向回推。 */
 function cloudAdopt(d, ts){
@@ -2660,7 +2735,7 @@ function cloudAdopt(d, ts){
 }
 async function loadFromServer(){
   if (!UID){ updateCloudUI(); return; }
-  CLOUD.status = "loading"; updateCloudUI();
+  cloudBusy("loading");
   try {
     const r = await fetch("/userdata?uid=" + UID);
     const j = await r.json().catch(()=>null);
@@ -2668,28 +2743,42 @@ async function loadFromServer(){
       const st = Number(j.data.ts);
       if (!cloudLocalDirty()){
         /* ★ 本机内容自上次与服务器一致以来**没改过** → 一律采用服务器账本并重绘。
-         * 这是本轮的核心修复：不再用"服务器 ts 是否更大"当门槛（cloudTs 会被本机自动保存刷高，
+         * 这是核心修复：不再用"服务器 ts 是否更大"当门槛（cloudTs 会被本机自动保存刷高，
          * 于是永远判成"服务器不比本机新"→ 跳过拉取 → 手机记完电脑永远不更新）。
          * 采用服务器版本 = 服务器是权威副本；分设备合并由垫片/服务端那层按内容做。 */
         cloudAdopt(j.data, st);
+        cloudIdle("ok");
       } else {
         /* 本机确实改过内容、且服务器不比本机新 → 保留本机、立刻推送，绝不静默覆盖用户刚记的东西
          * （用严格 > ：本机刚记的那一刻 t 完全可能等于服务器 t） */
-        if (st > cloudTs()) { cloudAdopt(j.data, st); }
+        if (st > cloudTs()) { cloudAdopt(j.data, st); cloudIdle("ok"); }
         else {
-          CLOUD.status = "ok";
           syncToServer();
           toast("本机有未上传的改动，已保留并上传");
+          cloudIdle("ok");
         }
       }
+    } else if (j && j.loading){
+      /* 本机还没有这个使用者的账本、垫片正在后台向服务器取：
+       * **先别推**（推了会把服务器上的数据盖掉）。后台取回并采用后会触发一次重绘，
+       * 那时会再走一遍这里；状态栏交给垫片同步完的回调 cloudNoteSyncResult 收尾。 */
+      cloudBusy("loading");
     } else if (r.status === 403){
-      CLOUD.status = "off";
+      cloudIdle("off");
     } else {
       /* 服务器还没有该使用者数据 → 上传本机 */
       syncToServer();
+      cloudIdle("ok");
     }
-  } catch(e){ CLOUD.status = "off"; }
-  updateCloudUI();
+  } catch(e){ cloudIdle("fail"); }
+}
+/* 垫片后台同步结束后回调这里：只把状态栏收尾成「已同步 · HH:mm」或「同步失败（点这里重试）」。
+ * ★ 这里**不要**改 cloudTs：那会让本机看起来比服务器新，页面就会拒收服务器刚拉回来的新内容、
+ *   反而把旧的本机账本推上去（实测踩过）。cloudTs 只由"真的采用/真的上传成功"两处来写。
+ * 首屏不再等网络 —— /userdata 立刻回本机账本，网络同步在后台跑（垫片侧 3 秒超时）。 */
+function cloudNoteSyncResult(ok){
+  if (ok) cloudIdle("ok");
+  else cloudIdle("fail");
 }
 /* 自动定时拉取（服务器权威副本，跨设备才能跟上）。
  * 页面内切换月份 / 人员走内存账本渲染，不额外发请求（见 setPerson / render）。 */
@@ -2703,14 +2792,50 @@ function startAutoPull(){
   });
   window.addEventListener("online", ()=>{ loadFromServer(); });     /* 网络恢复也拉 */
 }
+function cloudHHMM(ts){
+  const d = new Date(ts || Date.now());
+  return String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
+}
+/* 状态栏（header 右上角那一小块）。呈现规则：
+ *   · 首屏 1 秒内、以及"忙"还没满 1 秒 —— **不显示「同步中…」**（快的时候用户根本看不到）；
+ *   · 忙超过 1 秒才显示，且用小圆点 + 淡色小字（不是醒目胶囊，见 CSS 的 .cloud-state.busy）；
+ *   · 同步成功显示「已同步 · HH:mm」；失败显示「同步失败（点这里重试）」，可点。 */
 function updateCloudUI(){
   const el = document.getElementById("cloudState");
   if (!el) return;
+  el.classList.remove("busy");
+  el.style.cursor = "";
+  el.onclick = null;
   if (!UID){ el.textContent = "未设置口令"; el.style.color = "#f5b75e"; return; }
-  const map = { off:["仅本机","#9aa7a2"], loading:["同步中…","#f5b75e"], syncing:["保存中…","#f5b75e"], ok:["已同步","#7ce0b8"], fail:["未同步","#f28b82"] };
-  const m = map[CLOUD.status] || map.off;
-  el.textContent = m[0];
-  el.style.color = m[1];
+  const now = Date.now();
+  const busy = (CLOUD.status === "loading" || CLOUD.status === "syncing");
+  const slow = busy && CLOUD.since && (now - CLOUD.since) > 1000 && (now - CLOUD.bootAt) > 1000;
+  if (busy && !slow){
+    /* 还没到该显示的时候：保持"上一次已知状态"，绝不闪「同步中…」 */
+    if (CLOUD.lastOkAt || cloudTs()){ el.textContent = "已同步 · " + cloudHHMM(CLOUD.lastOkAt || cloudTs()); el.style.color = "#7ce0b8"; }
+    else { el.textContent = "仅本机"; el.style.color = "#9aa7a2"; }
+    return;
+  }
+  if (slow){
+    el.classList.add("busy");
+    el.textContent = "同步中";
+    el.style.color = "#9aa7a2";
+    return;
+  }
+  if (CLOUD.status === "ok"){
+    el.textContent = "已同步 · " + cloudHHMM(CLOUD.lastOkAt || cloudTs() || Date.now());
+    el.style.color = "#7ce0b8";
+    return;
+  }
+  if (CLOUD.status === "fail" || (CLOUD.status === "off" && CLOUD.tried)){
+    el.textContent = "同步失败（点这里重试）";
+    el.style.color = "#f28b82";
+    el.style.cursor = "pointer";
+    el.onclick = ()=>{ try { loadFromServer(); syncToServer(); } catch(e){} };
+    return;
+  }
+  el.textContent = "仅本机";
+  el.style.color = "#9aa7a2";
 }
 function nid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
 function todayStr(){
