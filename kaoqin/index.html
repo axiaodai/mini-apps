@@ -541,7 +541,7 @@ nav a.active svg{transform:translateY(-1px);}
 (function () {
   var KEY = "kaoqin_local_cloud_v1";     /* 本机存储：{v:2, items:{"<uid>":{d,t}}} */
   var KQ_APP = "kaoqin";                 /* 服务端槽位 */
-  var KQ_VER = "版本 2026-10-16a · 含 NAS 同步";   /* 只在 NAS 面板里显示；界面左下角不再显示版本 */
+  var KQ_VER = "版本 2026-10-17a · 含 NAS 同步";   /* 只在 NAS 面板里显示；界面左下角不再显示版本 */
   var realFetch = window.fetch ? window.fetch.bind(window) : null;
 
   /* ---------- 本机存储（按 uid 分开，每个 uid 一份 {d,t}） ---------- */
@@ -717,6 +717,52 @@ nav a.active svg{transform:translateY(-1px);}
       else { localStorage.setItem(NAS_KEY, JSON.stringify(c || {})); }
     } catch (e) {}
   }
+  /* ---------- 令牌失效（401）：说清原因 + 可选「记住口令」自动重连（2026-10-17）----------
+     背景：用户反馈「使用者登录每天都过期」。实测根因在服务端（任务计划每次跑 --set-pass
+     把 changed_at 顶到 now+1，等于每 5 分钟作废一次全部令牌），但页面这边原来也不够好：
+     不管什么原因都只写「登录已过期，请重新连接」，用户没法判断是密钥换了、口令被改过、
+     还是账号没了。服务端现在会在 401 里带上 reason / reason_text / hint，照抄给用户看。 */
+  function nasExpiredText(b) {
+    b = b || {};
+    var t = b.reason_text ? String(b.reason_text) : "";
+    var h = b.hint ? String(b.hint) : "";
+    if (t && h) { return t + "：" + h; }
+    if (h) { return h; }
+    if (t) { return t; }
+    return "口令在服务器上被改过、或服务器换过签名密钥：重新连接一次即可（本机数据不受影响）。";
+  }
+  /* 「记住口令」：**默认关闭**；只有用户自己勾了才把口令明文存进本机这份配置里。
+     共用电脑/借给别人用的手机不要勾（UI 上写着这句风险提示）。 */
+  function nasSavedPass() {
+    var c = nasCfg() || {};
+    return (c.savePass === true && c.pw) ? String(c.pw) : "";
+  }
+  function nasSetRemember(on, pass) {
+    var c = nasCfg() || {};
+    if (on && pass) { c.savePass = true; c.pw = String(pass); }
+    else { c.savePass = false; try { delete c.pw; } catch (e) { c.pw = ""; } }
+    nasSaveCfg(c);
+  }
+  /* 401 统一出口：把原因显示出来；若用户开过「记住口令」就用存下的口令自动重连一次。
+     返回 Promise<boolean>：true = 已自动重连成功，调用方可以原样重试一次。 */
+  function kqHandle401(g, retried) {
+    var why = nasExpiredText(g && g.body);
+    kqMarkExpired(true, why);
+    var saved = nasSavedPass();
+    if (!saved || retried) { return Promise.resolve(false); }
+    var c = nasCfg() || {};
+    kqPaintMsg("登录已过期（" + why + "）——正在用本机保存的口令自动重连…", true);
+    return nasLogin(c.url || nasBase(), c.user, saved).then(function () {
+      kqMarkExpired(false);
+      return true;
+    })["catch"](function () { return false; });
+  }
+  function kqErr401(g) {
+    var why = nasExpiredText(g && g.body);
+    var e = new Error("登录已过期，请重新连接（" + why + "）");
+    e.expired = true;
+    return e;
+  }
   function nasBase() {
     var c = nasCfg();
     return (c && c.url) ? String(c.url).replace(/\/+$/, "") : "";
@@ -790,8 +836,18 @@ nav a.active svg{transform:translateY(-1px);}
     }).then(function (r) {
       return r.json().then(function (j) {
         if (!r.ok || !j.ok) { throw new Error(j.error || "登录失败"); }
+        /* 令牌必须真有：以前这里是整体重写配置，万一把 token 写成 undefined/空串，
+           页面上就会出现"看着已连接、其实每次都 401"的假象。这里两道保险：
+           ① 令牌为空直接当登录失败（**不动本机配置**，原来那份还在）；
+           ② 只改 url/user/token/auto 四个字段，**其它字段（lastSync、记住的口令…）原样保留**。 */
+        if (!j.token) { throw new Error("服务器没有返回令牌（登录未成功，本机配置未改动）"); }
         var old = nasCfg() || {};
-        nasSaveCfg({ url: base, user: j.user, token: j.token, auto: (old.auto === false) ? false : true });
+        old.url = base;
+        old.user = j.user;
+        old.token = j.token;
+        old.auto = (old.auto === false) ? false : true;
+        nasSaveCfg(old);
+        try { KQ_STATE.expired = false; KQ_STATE.expiredWhy = ""; } catch (e) {}
         return j;
       });
     });
@@ -1057,11 +1113,17 @@ nav a.active svg{transform:translateY(-1px);}
     return "/api/one?user=" + encodeURIComponent(c.user) + "&app=" + KQ_APP +
       (bust ? ("&bust=" + (++__kqBust) + "-" + Date.now()) : "");
   }
-  function nasSyncKind(round, mode) {
+  function nasSyncKind(round, mode, retried) {
     round = round || 0;
     if (!nasConfigured()) { return Promise.resolve({ ok: false, msg: "未连接 NAS" }); }
     return nasReq("GET", kqOneUrl(round === 0)).then(function (g) {   /* 第一轮加唯一串破缓存 */
-      if (g.status === 401) { kqMarkExpired(true, "GET /api/one"); throw new Error("登录已过期，请重新连接"); }
+      if (g.status === 401) {
+        /* 令牌失效：先把原因显示出来；开过「记住口令」就自动用存下的口令重连一次再重试 */
+        return kqHandle401(g, retried).then(function (again) {
+          if (again) { return nasSyncKind(round, mode, true); }
+          throw kqErr401(g);
+        });
+      }
       if (!g.ok || !g.body || !g.body.ok) { throw new Error((g.body && g.body.error) || ("读取失败 " + g.status)); }
       var remote = g.body.data, rev = g.body.rev;
       var remoteItems = kqItemsOf(remote) || {};
@@ -1072,7 +1134,14 @@ nav a.active svg{transform:translateY(-1px);}
       var mine = kqRead().items;
       if (kqCanon(remoteItems) === kqCanon(mine)) { return { ok: true, rev: rev, pulled: mg.pulled, kept: mg.kept, pushed: false }; }
       return nasReq("PUT", kqOneUrl(), { baseRev: rev, data: { v: 1, items: mine } }).then(function (p) {
-        if (p.status === 409 && round < 3) { return nasSyncKind(round + 1, mode); }  /* 别人刚改过 → 重取再合并 */
+        if (p.status === 401) {
+          /* 写的时候才发现令牌失效（比如刚被作废）：同样处理 + 重来一轮 */
+          return kqHandle401(p, retried).then(function (again) {
+            if (again) { return nasSyncKind(round, mode, true); }
+            throw kqErr401(p);
+          });
+        }
+        if (p.status === 409 && round < 3) { return nasSyncKind(round + 1, mode, retried); }  /* 别人刚改过 → 重取再合并 */
         if (!p.ok || !p.body || !p.body.ok) { throw new Error((p.body && p.body.error) || ("写入失败 " + p.status)); }
         var i, u2;
         for (u2 in mine) {                       /* 上传成功 → 这批内容就是双方一致的基线 */
@@ -1159,7 +1228,7 @@ nav a.active svg{transform:translateY(-1px);}
   function nasOverwrite() {
     if (!nasConfigured()) { return Promise.resolve({ ok: false, msg: "未连接 NAS（请先连接并登录）" }); }
     return nasReq("GET", kqOneUrl()).then(function (g) {
-      if (g.status === 401) { kqMarkExpired(true, "GET /api/one"); throw new Error("登录已过期，请重新连接"); }
+      if (g.status === 401) { kqMarkExpired(true, nasExpiredText(g.body)); throw kqErr401(g); }
       if (!g.ok || !g.body || !g.body.ok) { throw new Error((g.body && g.body.error) || ("读取失败 " + g.status)); }
       var remote = g.body.data;
       var items = (remote && remote.items) ? remote.items : {};
@@ -1216,7 +1285,7 @@ nav a.active svg{transform:translateY(-1px);}
     }
     kqWrite({ items: items });               /* 本机也记下新时间 */
     return nasReq("GET", kqOneUrl(true)).then(function (g) {
-      if (g.status === 401) { kqMarkExpired(true, "GET /api/one"); throw new Error("登录已过期，请重新连接"); }
+      if (g.status === 401) { kqMarkExpired(true, nasExpiredText(g.body)); throw kqErr401(g); }
       if (!g.ok || !g.body || !g.body.ok) { throw new Error((g.body && g.body.error) || ("读取失败 " + g.status)); }
       var baseRev = g.body.rev;
       return nasReq("PUT", kqOneUrl(), { baseRev: baseRev, data: { v: 1, items: items } }).then(function (p) {
@@ -1365,8 +1434,9 @@ nav a.active svg{transform:translateY(-1px);}
     var el = document.getElementById("ls-kq-status");
     if (!el) { return; }
     var c = nasCfg();
-    if (KQ_STATE.expired) {          /* 令牌过期：必须让用户一眼看懂，并知道点哪儿 */
-      el.textContent = "⚠️ 登录已过期，请重新连接（点这里 → 填一次口令 →「重新连接」）";
+    if (KQ_STATE.expired) {          /* 令牌失效：必须让用户一眼看懂「为什么」，并知道点哪儿 */
+      el.textContent = "⚠️ 登录已过期，请重新连接（点这里 → 填一次口令 →「重新连接」）" +
+        (KQ_STATE.expiredWhy ? "　原因：" + KQ_STATE.expiredWhy : "");
       el.style.color = "#ff8b8b";
       return;
     }
@@ -1391,7 +1461,11 @@ nav a.active svg{transform:translateY(-1px);}
       var on = !!KQ_STATE.expired;
       bar.style.display = on ? "block" : "none";
       btn.style.display = on ? "block" : "none";
-      if (on) { bar.textContent = "登录已过期，请重新连接"; }
+      if (on) {
+        /* 只写「登录已过期」没有信息量：把服务端给的原因（密钥换了 / 口令被改过 / 账号没了）带上 */
+        bar.textContent = "登录已过期，请重新连接" +
+          (KQ_STATE.expiredWhy ? "（" + KQ_STATE.expiredWhy + "）" : "");
+      }
     } catch (e) {}
   }
   function kqReconnect() {
@@ -1404,19 +1478,23 @@ nav a.active svg{transform:translateY(-1px);}
     var pass = passEl ? passEl.value : "";
     function say(t, okk) { kqPaintMsg(t, okk); try { kqToast(t, !!okk); } catch (e) {} }
     if (!url || !user) { say("请先把服务器地址和使用者名字填上", false); return Promise.resolve({ ok: false }); }
+    if (!pass) { pass = nasSavedPass(); }      /* 勾过「记住口令」→ 不用再手输 */
     if (!pass) {
       if (passEl) {
         passEl.style.borderColor = "#e5484d";
         passEl.style.boxShadow = "0 0 0 2px rgba(229,72,77,.35)";
         try { passEl.focus(); } catch (e) {}
       }
-      say("请先在「口令」栏填一次你的登录口令，再点「重新连接」（口令不会保存在本机）", false);
+      say("请先在「口令」栏填一次你的登录口令，再点「重新连接」（想省这一步，可勾上「记住口令」）", false);
       return Promise.resolve({ ok: false, needPass: true });
     }
     if (passEl) { passEl.style.borderColor = ""; passEl.style.boxShadow = ""; }
+    var typed = passEl ? String(passEl.value || "") : "";
     say("正在重新连接…", true);
     return nasLogin(url, user, pass).then(function (j) {
       kqMarkExpired(false);
+      var rem = document.getElementById("ls-kq-remember");
+      if (rem && rem.checked && typed) { nasSetRemember(true, typed); }   /* 勾了才存，且只存验证过的 */
       if (passEl) { passEl.value = ""; }
       say("已重新连接" + (j && j.user ? "（" + j.user + "）" : "") + "，正在同步…", true);
       return nasSync("重新连接后");
@@ -1828,6 +1906,15 @@ nav a.active svg{transform:translateY(-1px);}
         : "") +
       "<div style='font-size:12.5px;color:#ffd28a;font-weight:700;margin-bottom:4px'>口令（在 NAS 任务脚本里设定的那个）</div>" +
       inp("ls-kq-pass", "", "登录口令", "password") +
+      /* 记住口令（可选增强，**默认关闭**）：勾了才把口令明文存在本机，令牌失效时可自动重连 */
+      "<label style='display:flex;gap:8px;align-items:flex-start;font-size:11.5px;color:#9aa3b2;line-height:1.75;" +
+        "margin:-2px 0 10px;cursor:pointer'>" +
+        "<input id='ls-kq-remember' type='checkbox'" + ((c && c.savePass) ? " checked" : "") +
+        " style='margin:3px 0 0;flex:0 0 auto'>" +
+        "<span><b style='color:#c3cbd8'>记住口令（仅本机，默认关闭）</b><br>" +
+        "勾上后：令牌万一失效，本机自动用记住的口令重连一次，不用再手输。<br>" +
+        "<b style='color:#ffb4b4'>风险</b>：口令会<b>明文</b>存在这台设备的浏览器里；" +
+        "共用电脑、或手机可能被别人拿去用时<b>不要勾</b>。</span></label>" +
       "<div style='display:flex;gap:8px;margin:6px 0 12px'>" +
       "<button id='ls-kq-connect' style='flex:1.4;padding:11px;border-radius:10px;border:none;background:#1f6f4a;color:#fff;font-weight:700;cursor:pointer'>连接并登录</button>" +
       "<button id='ls-kq-disconnect' style='flex:1;padding:11px;border-radius:10px;border:1px solid #5a2a30;background:#2a1a1e;color:#ffb4b4;cursor:pointer'>断开</button></div>" +
@@ -1904,6 +1991,27 @@ nav a.active svg{transform:translateY(-1px);}
       }
     })();
     document.getElementById("ls-kq-reconnect").addEventListener("click", function () { kqReconnect(); });
+    /* 「记住口令」勾选框：勾上要当场拿到口令（没填就撤销勾选并提示），取消勾选就把本机存的抹掉 */
+    (function () {
+      var rem = document.getElementById("ls-kq-remember");
+      if (!rem) { return; }
+      rem.addEventListener("change", function () {
+        var pel = document.getElementById("ls-kq-pass");
+        var pv = pel ? String(pel.value || "") : "";
+        if (this.checked) {
+          if (!pv) {
+            this.checked = false;
+            kqPaintMsg("想「记住口令」，请先在下面的口令栏填一次口令（或先点「连接并登录」）", false);
+            return;
+          }
+          nasSetRemember(true, pv);
+          kqPaintMsg("已记住口令（仅本机浏览器，明文保存）——令牌失效时会自动重连一次", true);
+        } else {
+          nasSetRemember(false);
+          kqPaintMsg("已取消「记住口令」，本机不再保存口令", true);
+        }
+      });
+    })();
     kqPaintExpiryBar();
     document.getElementById("ls-kq-connect").addEventListener("click", function () {
       var url = document.getElementById("ls-kq-url").value.trim();
@@ -1912,6 +2020,8 @@ nav a.active svg{transform:translateY(-1px);}
       if (!url || !user || !pass) { kqPaintMsg("请把地址、使用者、口令都填上", false); return; }
       kqPaintMsg("连接中…", true);
       nasLogin(url, user, pass).then(function (j) {
+        var rem = document.getElementById("ls-kq-remember");
+        if (rem && rem.checked) { nasSetRemember(true, pass); }   /* 用户勾了才存，且只存刚验证过的口令 */
         kqPaintMsg("登录成功，正在同步…", true);
         kqMarkExpired(false);
         kqPaintStatus();
@@ -2065,6 +2175,8 @@ nav a.active svg{transform:translateY(-1px);}
        pending = 该 uid 是否有未上传改动，base = 上次同步成功的基线指纹 */
     pullStats: function () { return { reqs: kqPullCount(), pulling: !!__kqPullP }; },
     isExpired: function () { return !!KQ_STATE.expired; },
+    expiredWhy: function () { return String(KQ_STATE.expiredWhy || ""); },
+    savedPass: nasSavedPass, setRemember: nasSetRemember, expiredText: nasExpiredText,
     markExpired: kqMarkExpired, reconnect: kqReconnect, openPanel: showNas,
     pending: kqIsPending, syncBase: kqBase, syncKey: function () { return SYNC_KEY; }
   };
@@ -2084,7 +2196,7 @@ nav a.active svg{transform:translateY(-1px);}
            `var` 落到全局会和页面自己的变量撞名（PAGE_VERSION 之类）。           */
 (function () {
   var PAGE_ID = "kaoqin";            /* 版本检测：本页在 /api/version 里的标识 */
-  var PAGE_VERSION = "2026-10-16a";      /* 构建期写死的「本页版本」；与服务端解析结果比 */
+  var PAGE_VERSION = "2026-10-17a";      /* 构建期写死的「本页版本」；与服务端解析结果比 */
   var UPDATE_BACKUP_KEY = "mini-apps-update-backup-v1";
   var UPDATE_TRACE_KEY = "mini-apps-update-trace-v1";   /* 只给自动化测试看：更新路径里的 setItem 键名 */
   var UPDATE_IGNORE_KEY = "mini-apps-update-ignore-v1";
@@ -2403,7 +2515,7 @@ nav a.active svg{transform:translateY(-1px);}
   if (document.readyState === "loading") { document.addEventListener("DOMContentLoaded", boot); }
   else { boot(); }
 })();
-</script><!-- kq-ver 2026-10-16a -->
+</script><!-- kq-ver 2026-10-17a -->
 <script>
 "use strict";
 /* ============================================================
