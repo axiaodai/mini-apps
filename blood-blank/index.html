@@ -1460,6 +1460,10 @@ html, body { max-width: 100%; overflow-x: hidden; }
                      registerNameErr: nasRegNameErr,
                      tomb: { all: tombAll, add: tombAdd, save: tombSave, key: tombKey, merge: tombMerge, itemsOf: tombItemsOf, absorb: tombAbsorb, user: tombUser } };
   window.__lsNas.expired = function () { return !!NAS_STATE.expired; };
+  window.__lsNas.expiredWhy = function () { return String(NAS_STATE.expiredWhy || ""); };
+  window.__lsNas.savedPass = nasSavedPass;
+  window.__lsNas.setRemember = nasSetRemember;
+  window.__lsNas.expiredText = nasExpiredText;
   window.__lsNas.markExpired = nasMarkExpired;
   window.__lsNas.reconnect = nasReconnect;
   window.__lsSync = { make: syncMakeSync, encode: syncEncode, decode: syncDecode, apply: syncApply, show: showSync };
@@ -2039,6 +2043,50 @@ html, body { max-width: 100%; overflow-x: hidden; }
     try { return JSON.parse(safeGet(NAS_KEY) || "null"); } catch (e) { return null; }
   }
   function nasSaveCfg(c) { try { safeSet(NAS_KEY, JSON.stringify(c || {})); } catch (e) {} }
+  /* ---------- 令牌失效（401）：说清原因 + 可选「记住口令」自动重连（2026-10-17）----------
+     用户反馈「使用者登录每天都过期」，实测根因在服务端（任务计划每次跑 --set-pass 把
+     changed_at 顶到 now+1 → 每 5 分钟作废一次全部令牌）。页面这边同步改进：
+     服务端 401 现在带 reason / reason_text / hint，照抄给用户看，不再只写「登录已过期」。 */
+  function nasExpiredText(b) {
+    b = b || {};
+    var t = b.reason_text ? String(b.reason_text) : "";
+    var h = b.hint ? String(b.hint) : "";
+    if (t && h) { return t + "：" + h; }
+    if (h) { return h; }
+    if (t) { return t; }
+    return "口令在服务器上被改过、或服务器换过签名密钥：重新连接一次即可（本机数据不受影响）。";
+  }
+  /* 「记住口令」：**默认关闭**；勾了才把口令明文存进本机这份配置（共用电脑别勾）。 */
+  function nasSavedPass() {
+    var c = nasCfg() || {};
+    return (c.savePass === true && c.pw) ? String(c.pw) : "";
+  }
+  function nasSetRemember(on, pass) {
+    var c = nasCfg() || {};
+    if (on && pass) { c.savePass = true; c.pw = String(pass); }
+    else { c.savePass = false; try { delete c.pw; } catch (e) { c.pw = ""; } }
+    nasSaveCfg(c);
+  }
+  /* 401 统一出口：显示原因；开过「记住口令」就用存下的口令自动重连一次。
+     返回 Promise<boolean>：true = 已自动重连成功，调用方可以原样重试一次。 */
+  function nasHandle401(g, retried) {
+    var why = nasExpiredText(g && g.body);
+    nasMarkExpired(true, why);
+    var saved = nasSavedPass();
+    if (!saved || retried) { return Promise.resolve(false); }
+    var c = nasCfg() || {};
+    try { var el = document.getElementById("ls-nas-msg"); if (el) { el.textContent = "登录已过期（" + why + "）——正在用本机保存的口令自动重连…"; } } catch (e) {}
+    return nasLogin(c.url || nasBase(), c.user, saved).then(function () {
+      nasMarkExpired(false);
+      return true;
+    })["catch"](function () { return false; });
+  }
+  function nasErr401(g) {
+    var why = nasExpiredText(g && g.body);
+    var e = new Error("登录已过期，请重新连接（" + why + "）");
+    e.expired = true;
+    return e;
+  }
   function nasConfigured() { var c = nasCfg(); return !!(c && c.url && c.token && c.user); }
   function nasBase() {
     var c = nasCfg();
@@ -2195,7 +2243,16 @@ html, body { max-width: 100%; overflow-x: hidden; }
     }).then(function (r) {
       return r.json().then(function (j) {
         if (!r.ok || !j.ok) { throw new Error(j.error || "登录失败"); }
-        nasSaveCfg({ url: base, user: j.user, token: j.token, auto: true });
+        /* 令牌必须真有：空的/缺的令牌不能写进配置（会变成"看着已连接、其实每次都 401"）；
+           并且逐字段合并，保住 lastSync 与「记住口令」等字段，不做整体重写。 */
+        if (!j.token) { throw new Error("服务器没有返回令牌（登录未成功，本机配置未改动）"); }
+        var old = nasCfg() || {};
+        old.url = base;
+        old.user = j.user;
+        old.token = j.token;
+        if (old.auto === undefined) { old.auto = true; }
+        nasSaveCfg(old);
+        try { NAS_STATE.expired = false; NAS_STATE.expiredWhy = ""; } catch (e) {}
         return j;
       });
     });
@@ -2390,7 +2447,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
   }
 
   /* 同步一个 app：GET → 合并 → PUT(baseRev)，409 就重来 */
-  function nasSyncKind(kind, round) {
+  function nasSyncKind(kind, round, retried) {
     round = round || 0;
     var c = nasCfg();
     if (!c) { return Promise.resolve({ kind: kind, ok: false, msg: "未配置" }); }
@@ -2398,7 +2455,13 @@ html, body { max-width: 100%; overflow-x: hidden; }
     /* 服务器还没开通独立的 tomb 槽 → 安静跳过（墓碑随献血/跑步槽一起同步，不影响其它 kind） */
     if (kind === "tomb" && NAS_STATE.tombSlot === false) { return Promise.resolve({ kind: kind, ok: true, skipped: true }); }
     return nasReq("GET", "/api/one?user=" + encodeURIComponent(user) + "&app=" + kind).then(function (g) {
-      if (g.status === 401) { nasMarkExpired(true, "GET /api/one"); throw new Error("登录已过期，请重新连接"); }
+      if (g.status === 401) {
+        /* 令牌失效：先显示原因；开过「记住口令」就自动重连一次再重试 */
+        return nasHandle401(g, retried).then(function (again) {
+          if (again) { return nasSyncKind(kind, round, true); }
+          throw nasErr401(g);
+        });
+      }
       if (kind === "tomb" && (g.status === 400 || g.status === 404 || g.status === 405)) {
         NAS_STATE.tombSlot = false;
         return { kind: kind, ok: true, skipped: true, msg: "该服务器暂无独立 tomb 槽（墓碑随记录槽同步）" };
@@ -2414,7 +2477,13 @@ html, body { max-width: 100%; overflow-x: hidden; }
       if (sameAsRemote && !changedLocal) { return { kind: kind, ok: true, rev: rev, pushed: false }; }
       return nasReq("PUT", "/api/one?user=" + encodeURIComponent(user) + "&app=" + kind,
                     { baseRev: rev, data: merged }).then(function (p) {
-        if (p.status === 409 && round < 3) { return nasSyncKind(kind, round + 1); }   /* 别人刚改过 → 重取再合并 */
+        if (p.status === 401) {
+          return nasHandle401(p, retried).then(function (again) {
+            if (again) { return nasSyncKind(kind, round, true); }
+            throw nasErr401(p);
+          });
+        }
+        if (p.status === 409 && round < 3) { return nasSyncKind(kind, round + 1, retried); }   /* 别人刚改过 → 重取再合并 */
         if (!p.ok || !p.body || !p.body.ok) { throw new Error((p.body && p.body.error) || ("写入失败 " + p.status)); }
         return { kind: kind, ok: true, rev: p.body.rev, pushed: true };
       });
@@ -2447,7 +2516,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
         NAS_STATE.tombSlot = false;
         return { kind: kind, ok: true, skipped: true };
       }
-      if (g.status === 401) { throw new Error("登录已过期，请重新连接"); }
+      if (g.status === 401) { nasMarkExpired(true, nasExpiredText(g.body)); throw nasErr401(g); }
       if (!g.ok || !g.body || !g.body.ok) { throw new Error((g.body && g.body.error) || ("读取失败 " + g.status)); }
       return nasReq("PUT", "/api/one?user=" + encodeURIComponent(user) + "&app=" + kind,
                     { baseRev: g.body.rev, data: val }).then(function (p) {
@@ -2581,7 +2650,11 @@ html, body { max-width: 100%; overflow-x: hidden; }
       var on = !!NAS_STATE.expired;
       bar.style.display = on ? "block" : "none";
       btn.style.display = on ? "block" : "none";
-      if (on) { bar.textContent = "登录已过期，请重新连接"; }
+      if (on) {
+        /* 只有「登录已过期」信息量不够：把服务端给的原因（密钥换了 / 口令被改过 / 账号没了）带上 */
+        bar.textContent = "登录已过期，请重新连接" +
+          (NAS_STATE.expiredWhy ? "（" + NAS_STATE.expiredWhy + "）" : "");
+      }
     } catch (e) {}
   }
   /* 一键重连：地址 + 已保存的使用者名字 + 口令栏（必填，口令不落盘） */
@@ -2601,6 +2674,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
       } catch (e) {}
     }
     if (!url || !user) { say("请先把服务器地址和使用者名字填上"); return Promise.resolve({ ok: false }); }
+    if (!pass) { pass = nasSavedPass(); }      /* 勾过「记住口令」→ 不用再手输 */
     if (!pass) {
       /* 口令不保存（安全约定）→ 引导用户填这一栏，而不是干说"请重新连接" */
       if (passEl) {
@@ -2608,13 +2682,16 @@ html, body { max-width: 100%; overflow-x: hidden; }
         passEl.style.boxShadow = "0 0 0 2px rgba(229,72,77,.35)";
         try { passEl.focus(); } catch (e) {}
       }
-      say("请先在「口令」栏填一次你的登录口令，再点「重新连接」（口令不会保存在本机）");
+      say("请先在「口令」栏填一次你的登录口令，再点「重新连接」（想省这一步，可勾上「记住口令」）");
       return Promise.resolve({ ok: false, needPass: true });
     }
     if (passEl) { passEl.style.borderColor = ""; passEl.style.boxShadow = ""; }
+    var typed = passEl ? String(passEl.value || "") : "";
     say("正在重新连接…", true);
     return nasLogin(url, user, pass).then(function (j) {
       nasMarkExpired(false);
+      var rem = document.getElementById("ls-nas-remember");
+      if (rem && rem.checked && typed) { nasSetRemember(true, typed); }   /* 勾了才存，且只存验证过的 */
       if (passEl) { passEl.value = ""; }
       say("已重新连接" + (j && j.user ? "（" + j.user + "）" : "") + "，正在同步…", true);
       return nasSync("重新连接后");
@@ -2633,7 +2710,8 @@ html, body { max-width: 100%; overflow-x: hidden; }
     if (!el) { return; }
     var c = nasCfg();
     if (NAS_STATE.expired) {
-      el.textContent = "⚠️ 登录已过期，请重新连接（点这里打开面板 → 填一次口令 →「重新连接」）";
+      el.textContent = "⚠️ 登录已过期，请重新连接（点这里 → 填一次口令 →「重新连接」）" +
+        (NAS_STATE.expiredWhy ? "　原因：" + NAS_STATE.expiredWhy : "");
       el.style.color = "#ff8b8b";
       return;
     }
@@ -2706,6 +2784,15 @@ html, body { max-width: 100%; overflow-x: hidden; }
       inp("ls-nas-user", c.user || currentUser(), "例如：呆") +
       "<div style='font-size:12.5px;color:#9aa3b2;margin-bottom:4px'>口令（在 NAS 任务脚本里设定的那个）</div>" +
       inp("ls-nas-pass", "", "登录口令", "password") +
+      /* 记住口令（可选增强，**默认关闭**）：勾了才把口令明文存在本机，令牌失效时可自动重连 */
+      "<label style='display:flex;gap:8px;align-items:flex-start;font-size:11.5px;color:#9aa3b2;line-height:1.75;" +
+        "margin:-2px 0 10px;cursor:pointer'>" +
+        "<input id='ls-nas-remember' type='checkbox'" + ((c && c.savePass) ? " checked" : "") +
+        " style='margin:3px 0 0;flex:0 0 auto'>" +
+        "<span><b style='color:#c3cbd8'>记住口令（仅本机，默认关闭）</b><br>" +
+        "勾上后：令牌万一失效，本机自动用记住的口令重连一次，不用再手输。<br>" +
+        "<b style='color:#ffb4b4'>风险</b>：口令会<b>明文</b>存在这台设备的浏览器里；" +
+        "共用电脑、或手机可能被别人拿去用时<b>不要勾</b>。</span></label>" +
       "<div style='display:flex;gap:8px;margin:6px 0 12px'>" +
       "<button id='ls-nas-connect' style='flex:1.4;padding:11px;border-radius:10px;border:none;background:#1f6f4a;color:#fff;font-weight:700;cursor:pointer'>连接并登录</button>" +
       "<button id='ls-nas-disconnect' style='flex:1;padding:11px;border-radius:10px;border:1px solid #5a2a30;background:#2a1a1e;color:#ffb4b4;cursor:pointer'>断开</button></div>" +
@@ -2757,6 +2844,27 @@ html, body { max-width: 100%; overflow-x: hidden; }
     })();
 
     document.getElementById("ls-nas-reconnect").addEventListener("click", function () { nasReconnect(); });
+    /* 「记住口令」勾选框：勾上要当场拿到口令（没填就撤销勾选并提示），取消勾选就把本机存的抹掉 */
+    (function () {
+      var rem = document.getElementById("ls-nas-remember");
+      if (!rem) { return; }
+      rem.addEventListener("change", function () {
+        var pel = document.getElementById("ls-nas-pass");
+        var pv = pel ? String(pel.value || "") : "";
+        if (this.checked) {
+          if (!pv) {
+            this.checked = false;
+            msg("想「记住口令」，请先在下方的口令栏填一次口令（或先点「连接并登录」）");
+            return;
+          }
+          nasSetRemember(true, pv);
+          msg("已记住口令（仅本机浏览器，明文保存）——令牌失效时会自动重连一次", true);
+        } else {
+          nasSetRemember(false);
+          msg("已取消「记住口令」，本机不再保存口令", true);
+        }
+      });
+    })();
     nasPaintExpiryBar();
     document.getElementById("ls-nas-connect").addEventListener("click", function () {
       var url = document.getElementById("ls-nas-url").value.trim();
@@ -2765,6 +2873,8 @@ html, body { max-width: 100%; overflow-x: hidden; }
       if (!url || !user || !pass) { msg("请把地址、使用者、口令都填上"); return; }
       msg("连接中…");
       nasLogin(url, user, pass).then(function (j) {
+        var rem = document.getElementById("ls-nas-remember");
+        if (rem && rem.checked) { nasSetRemember(true, pass); }   /* 用户勾了才存，且只存刚验证过的口令 */
         msg("登录成功，正在同步…", true);
         nasMarkExpired(false);
         nasPaintStatus();
@@ -2935,7 +3045,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
            `var` 落到全局会和页面自己的变量撞名（PAGE_VERSION 之类）。              */
 (function () {
   var PAGE_ID = "blood-blank";           /* 版本检测：本页在 /api/version 里的标识（注入时替换） */
-  var PAGE_VERSION = "2026-10-16a";      /* 构建期写死的「本页版本」；与服务端解析结果比 */
+  var PAGE_VERSION = "2026-10-17a";      /* 构建期写死的「本页版本」；与服务端解析结果比 */
   var UPDATE_BACKUP_KEY = "mini-apps-update-backup-v1";
   var UPDATE_TRACE_KEY = "mini-apps-update-trace-v1";   /* 只给自动化测试看：更新路径里的 setItem 键名 */
   var UPDATE_IGNORE_KEY = "mini-apps-update-ignore-v1";
@@ -4156,7 +4266,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
         v = document.createElement("div");
         v.id = "ls-version";
         v.style.cssText = "margin-top:10px;padding-top:8px;border-top:1px solid #2a3040;font-size:11px;color:#8b94a6;text-align:center;line-height:1.6";
-        v.textContent = "版本 2026-10-16a · 含 NAS 同步";
+        v.textContent = "版本 2026-10-17a · 含 NAS 同步";
       }
       if (v.parentNode !== p || p.lastElementChild !== v) { p.appendChild(v); }
       return v;
